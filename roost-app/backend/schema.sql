@@ -29,6 +29,14 @@ CREATE TABLE IF NOT EXISTS email_verification_tokens (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id           SERIAL PRIMARY KEY,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token        TEXT UNIQUE NOT NULL,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS listings (
   id             SERIAL PRIMARY KEY,
   title          TEXT NOT NULL,
@@ -52,6 +60,8 @@ CREATE TABLE IF NOT EXISTS listings (
   view_count     INTEGER NOT NULL DEFAULT 0,
   sold           BOOLEAN NOT NULL DEFAULT FALSE,
   sold_at        TIMESTAMPTZ,
+  lat            NUMERIC,          -- geocoded from city/state; NULL if geocoding failed or hasn't run
+  lon            NUMERIC,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -164,6 +174,9 @@ ALTER TABLE listings ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAUL
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS sold BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_listings_sold ON listings (sold, sold_at DESC);
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS lat NUMERIC;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS lon NUMERIC;
 
 CREATE INDEX IF NOT EXISTS idx_users_verification_status ON users (verification_status);
 CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_token ON email_verification_tokens (token);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens (token);

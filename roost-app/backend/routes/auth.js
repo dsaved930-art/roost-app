@@ -5,6 +5,7 @@ const { hashPassword, comparePassword } = require('../utils/passwords');
 const { setAuthCookie, clearAuthCookie } = require('../middleware/auth');
 const { passport, googleConfigured } = require('../passport-setup');
 const { sendVerificationEmail } = require('../utils/emailVerification');
+const { sendPasswordResetEmail } = require('../utils/passwordReset');
 const { requireAuth } = require('../middleware/auth');
 
 function normalizeEmail(e) { return String(e || '').trim().toLowerCase(); }
@@ -133,6 +134,64 @@ router.post('/resend-verification', requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not send a new verification email.' });
+  }
+});
+
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    if (!email || !isValidEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    // Deliberately the same response whether or not the account exists —
+    // otherwise this endpoint would let anyone check which emails have
+    // accounts on Roost just by watching which requests get a different reply.
+    const genericResponse = { ok: true, message: "If an account exists for that email, we've sent a password reset link." };
+
+    if (result.rows.length === 0) return res.json(genericResponse);
+    const user = result.rows[0];
+    if (!user.password_hash) {
+      // Auto-created/unclaimed account — there's no password to reset. Silently
+      // do nothing rather than reveal that distinction to whoever is asking.
+      return res.json(genericResponse);
+    }
+
+    await sendPasswordResetEmail(user);
+    res.json(genericResponse);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const token = String(req.body.token || '');
+    const newPassword = String(req.body.newPassword || '');
+    if (!token) return res.status(400).json({ error: 'Missing reset token.' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Password should be at least 6 characters.' });
+
+    const result = await pool.query('SELECT * FROM password_reset_tokens WHERE token = $1', [token]);
+    if (result.rows.length === 0) return res.status(400).json({ error: 'That reset link is invalid or has already been used.' });
+    const record = result.rows[0];
+    if (new Date(record.expires_at) < new Date()) {
+      await pool.query('DELETE FROM password_reset_tokens WHERE id = $1', [record.id]);
+      return res.status(400).json({ error: 'That reset link has expired — request a new one.' });
+    }
+
+    const hash = await hashPassword(newPassword);
+    const updated = await pool.query(
+      'UPDATE users SET password_hash = $1, auto_created = FALSE WHERE id = $2 RETURNING *',
+      [hash, record.user_id]
+    );
+    await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [record.user_id]);
+
+    const user = updated.rows[0];
+    setAuthCookie(res, user); // sign them straight in, same as a fresh login
+    res.json({ user: { name: user.name, email: user.email, role: user.role, emailVerified: user.email_verified, verificationStatus: user.verification_status, verificationNote: user.verification_note } });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Something went wrong resetting your password.' });
   }
 });
 

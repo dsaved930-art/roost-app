@@ -94,6 +94,22 @@ function populateCategorySelect() {
 // ===================== BROWSE / FILTER =====================
 let activeLocation = null;
 
+function formatDistance(miles) {
+  if (miles < 0.1) return 'less than 0.1 mi away';
+  return `${miles < 10 ? miles.toFixed(1) : Math.round(miles)} mi away`;
+}
+
+// Same formula as the backend's utils/geocode.js — great-circle distance in miles.
+function distanceMilesClient(lat1, lon1, lat2, lon2) {
+  const toRad = d => (d * Math.PI) / 180;
+  const R = 3958.8;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 async function loadListings() {
   const grid = document.getElementById('listings-grid');
   grid.innerHTML = `<div class="empty">Loading listings…</div>`;
@@ -114,6 +130,7 @@ function applyFilters() {
   const priceMin = document.getElementById('price-min').value;
   const priceMax = document.getElementById('price-max').value;
   const tradeOnly = document.getElementById('trade-filter').checked;
+  const locationHasCoords = activeLocation && activeLocation.lat != null && activeLocation.lon != null;
 
   let results = allListings.filter(l => {
     if (currentCategory !== 'all' && l.category !== currentCategory) return false;
@@ -125,8 +142,18 @@ function applyFilters() {
     if (priceMin !== '' && l.free && Number(priceMin) > 0) return false;
     if (priceMax !== '' && !l.free && l.price > Number(priceMax)) return false;
     if (activeLocation) {
-      const hay = `${l.city} ${l.state}`.toLowerCase();
-      if (!hay.includes(activeLocation.text.toLowerCase())) return false;
+      if (locationHasCoords && l.lat != null && l.lon != null) {
+        // Real distance — both the search location and this listing geocoded successfully.
+        l._distanceMiles = distanceMilesClient(activeLocation.lat, activeLocation.lon, Number(l.lat), Number(l.lon));
+        if (l._distanceMiles > Number(activeLocation.radius)) return false;
+      } else {
+        // Fallback — one side (or both) couldn't be geocoded, so match by city/state text instead.
+        l._distanceMiles = null;
+        const hay = `${l.city} ${l.state}`.toLowerCase();
+        if (!hay.includes(activeLocation.text.toLowerCase())) return false;
+      }
+    } else {
+      l._distanceMiles = null;
     }
     if (tradeOnly && !l.openToTrade) return false;
     return true;
@@ -167,7 +194,7 @@ function renderGrid(results) {
       </div>
       <div class="card-body">
         <div class="card-title-row"><h3>${escapeHtml(l.title)}</h3>${l.sellerVerified ? verifiedBadgeHtml('inline') : ''}</div>
-        <div class="card-meta">${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}</div>
+        <div class="card-meta">${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}${(l._distanceMiles != null) ? ` · <span class="distance-tag">${formatDistance(l._distanceMiles)}</span>` : ''}</div>
         <div class="card-price">${l.free ? 'Free' : '$' + l.price}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
       </div>
     </a>`;
@@ -416,10 +443,33 @@ function setLocationIndicator() {
   if (activeLocation) { text.textContent = `${activeLocation.text} · ${activeLocation.radius} mi`; el.classList.remove('unset'); }
   else { text.textContent = 'Choose a location'; el.classList.add('unset'); }
 }
-document.getElementById('apply-location').addEventListener('click', () => {
+document.getElementById('apply-location').addEventListener('click', async () => {
   const text = document.getElementById('loc-search').value.trim();
   const radius = document.getElementById('loc-radius').value;
-  activeLocation = text ? { text, radius } : null;
+  const applyBtn = document.getElementById('apply-location');
+
+  if (!text) {
+    activeLocation = null;
+    setLocationIndicator();
+    document.getElementById('location-overlay').classList.remove('show');
+    applyFilters();
+    return;
+  }
+
+  applyBtn.disabled = true;
+  applyBtn.textContent = 'Finding location…';
+  let coords = null;
+  try {
+    coords = await api('/geocode?q=' + encodeURIComponent(text));
+  } catch (e) {
+    // No match found, or the geocoder had trouble — fall back to matching
+    // by city/state text below rather than failing the filter entirely.
+    coords = null;
+  }
+  applyBtn.disabled = false;
+  applyBtn.textContent = 'Use this location';
+
+  activeLocation = { text, radius, lat: coords ? coords.lat : null, lon: coords ? coords.lon : null };
   setLocationIndicator();
   document.getElementById('location-overlay').classList.remove('show');
   applyFilters();
@@ -432,7 +482,19 @@ document.getElementById('clear-location').addEventListener('click', () => {
 });
 
 document.getElementById('tab-browse').addEventListener('click', () => switchView('browse'));
-document.getElementById('tab-post').addEventListener('click', () => switchView('post'));
+document.getElementById('tab-post').addEventListener('click', () => {
+  if (!currentUser) { openAuthModal('signup', () => switchView('post')); return; }
+  prefillPosterFields();
+  switchView('post');
+});
+
+function prefillPosterFields() {
+  if (!currentUser) return;
+  const nameField = document.getElementById('f-poster-name');
+  const emailField = document.getElementById('f-contact-value');
+  if (nameField && !nameField.value) nameField.value = currentUser.name;
+  if (emailField && !emailField.value) emailField.value = currentUser.email;
+}
 document.getElementById('tab-messages').addEventListener('click', () => switchView('messages'));
 function switchView(view) {
   document.getElementById('view-browse').style.display = view === 'browse' ? 'block' : 'none';
@@ -587,6 +649,12 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
   const errEl = document.getElementById('post-error');
   errEl.textContent = '';
 
+  if (!currentUser) {
+    errEl.textContent = 'Please sign in first.';
+    openAuthModal('signup', () => switchView('post'));
+    return;
+  }
+
   const body = {
     title: document.getElementById('f-title').value.trim(),
     category: document.getElementById('f-category').value,
@@ -608,8 +676,8 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
     photos: pendingPhotos
   };
 
-  if (!body.title || !body.breed || !body.city || !body.state || !body.description || !body.posterName || !body.contactValue) {
-    errEl.textContent = 'Please fill in title, species, city, state, description, your name, and contact details.';
+  if (!body.title || !body.category || !body.city || !body.state || !body.description || !body.contactValue) {
+    errEl.textContent = 'Please fill in title, category, city, state, description, and contact details.';
     return;
   }
   if (!body.free && (!body.price || Number(body.price) < 0)) { errEl.textContent = 'Enter a price, or check "free to a good home".'; return; }
@@ -691,6 +759,18 @@ async function renderAuthGate(mode) {
     `;
     document.getElementById('auth-switch-link').addEventListener('click', (e) => { e.preventDefault(); renderAuthGate('login'); });
     document.getElementById('auth-submit').addEventListener('click', handleSignup);
+  } else if (mode === 'forgot') {
+    c.innerHTML = `
+      <h2>Reset your password</h2>
+      <div class="auth-sub">Enter your email and we'll send a link to set a new password.</div>
+      <div class="field"><label for="auth-email">Email</label><input type="text" id="auth-email" placeholder="you@email.com"></div>
+      <div class="auth-error" id="auth-error"></div>
+      <button class="primary" id="auth-submit" style="width:100%;">Send reset link</button>
+      <div class="auth-switch">Remembered it? <a href="#" id="auth-switch-link">Back to sign in</a></div>
+    `;
+    document.getElementById('auth-switch-link').addEventListener('click', (e) => { e.preventDefault(); renderAuthGate('login'); });
+    document.getElementById('auth-submit').addEventListener('click', handleForgotPassword);
+    return; // no Google button needed on this screen
   } else {
     c.innerHTML = `
       <h2>Sign in</h2>
@@ -701,8 +781,10 @@ async function renderAuthGate(mode) {
       <div class="auth-error" id="auth-error"></div>
       <button class="primary" id="auth-submit" style="width:100%;">Log in</button>
       <div class="auth-switch">New to Roost? <a href="#" id="auth-switch-link">Create an account</a></div>
+      <div class="auth-switch"><a href="#" id="auth-forgot-link">Forgot password?</a></div>
     `;
     document.getElementById('auth-switch-link').addEventListener('click', (e) => { e.preventDefault(); renderAuthGate('signup'); });
+    document.getElementById('auth-forgot-link').addEventListener('click', (e) => { e.preventDefault(); renderAuthGate('forgot'); });
     document.getElementById('auth-submit').addEventListener('click', handleLogin);
   }
 
@@ -755,6 +837,61 @@ async function handleLogin() {
   } finally {
     btn.disabled = false; btn.textContent = 'Log in';
   }
+}
+
+async function handleForgotPassword() {
+  const err = document.getElementById('auth-error');
+  err.style.color = 'var(--rust-dark)';
+  err.textContent = '';
+  const email = document.getElementById('auth-email').value.trim();
+  if (!email) { err.textContent = 'Enter your email address.'; return; }
+
+  const btn = document.getElementById('auth-submit');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const data = await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+    const c = document.getElementById('auth-gate-content');
+    c.innerHTML = `
+      <h2>Check your email</h2>
+      <div class="auth-sub">${escapeHtml(data.message || "If an account exists for that email, we've sent a password reset link.")}</div>
+      <button class="secondary" id="auth-switch-link" style="width:100%;">Back to sign in</button>
+    `;
+    document.getElementById('auth-switch-link').addEventListener('click', () => renderAuthGate('login'));
+  } catch (e) {
+    err.textContent = (e.data && e.data.error) || 'Something went wrong. Please try again.';
+    btn.disabled = false; btn.textContent = 'Send reset link';
+  }
+}
+
+async function handleResetPassword(token) {
+  const c = document.getElementById('auth-gate-content');
+  c.innerHTML = `
+    <h2>Set a new password</h2>
+    <div class="auth-sub">Choose a new password for your Roost account.</div>
+    <div class="field"><label for="reset-password-input">New password</label><input type="password" id="reset-password-input" placeholder="At least 6 characters"></div>
+    <div class="auth-error" id="auth-error"></div>
+    <button class="primary" id="reset-submit-btn" style="width:100%;">Set new password</button>
+  `;
+  document.getElementById('reset-submit-btn').addEventListener('click', async () => {
+    const err = document.getElementById('auth-error');
+    err.style.color = 'var(--rust-dark)';
+    err.textContent = '';
+    const newPassword = document.getElementById('reset-password-input').value;
+    if (newPassword.length < 6) { err.textContent = 'Password should be at least 6 characters.'; return; }
+
+    const btn = document.getElementById('reset-submit-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const data = await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, newPassword }) });
+      currentUser = data.user;
+      document.getElementById('auth-overlay').classList.remove('show');
+      updateAuthArea();
+      showToast('Password updated — you\'re signed in.');
+    } catch (e) {
+      err.textContent = (e.data && e.data.error) || 'Could not reset your password.';
+      btn.disabled = false; btn.textContent = 'Set new password';
+    }
+  });
 }
 
 function onAuthSuccess() {
@@ -929,32 +1066,6 @@ document.getElementById('footer-dmca').addEventListener('click', (e) => { e.prev
 document.getElementById('open-species-policy').addEventListener('click', (e) => { e.preventDefault(); openLegal('species'); });
 document.getElementById('open-terms-from-form').addEventListener('click', (e) => { e.preventDefault(); openLegal('terms'); });
 document.getElementById('open-privacy-from-form').addEventListener('click', (e) => { e.preventDefault(); openLegal('privacy'); });
-
-// ===================== SAMPLE LISTINGS (dev/demo helper) =====================
-const SAMPLE_LISTINGS = [
-  { title: 'Hand-raised cockatiel pair, very tame', category: 'PAR', breed: 'Cockatiel (grey pied)', age: '8 months', sex: '', free: false, price: 180, city: 'Sacramento', state: 'CA', description: "Bonded cockatiel pair, hand-raised from hatch and used to being handled daily. Both step up on command. Comes with a travel carrier. Rehoming due to an upcoming move.", posterName: 'Sample Seller', contactMethod: 'Email', contactValue: 'sac.birds.rehome@example.com', attested: true, agreedTerms: true },
-  { title: 'Society finch trio - active, easy care', category: 'FIN', breed: 'Society finch', age: '1 year', sex: '', free: true, price: 0, city: 'Denver', state: 'CO', description: "Free to a good home: three healthy society finches, always together and constantly chattering. Great starter birds. Cage not included, just the birds.", posterName: 'Sample Seller', contactMethod: 'Phone', contactValue: '(720) 555-0142', attested: true, agreedTerms: true },
-  { title: 'Silkie bantam hens, 4 available', category: 'POU', breed: 'Silkie bantam chicken', age: '6 months', sex: 'Female', free: false, price: 45, city: 'Longmont', state: 'CO', description: "Four sweet silkie bantam hens, not laying yet but close. Friendly, good with kids. Selling as a group of 4 to keep them together.", posterName: 'Sample Seller', contactMethod: 'Email', contactValue: 'longmontcoop@example.com', attested: true, agreedTerms: true }
-];
-const loadSamplesBtn = document.getElementById('load-samples');
-if (loadSamplesBtn) {
-  loadSamplesBtn.addEventListener('click', async () => {
-    loadSamplesBtn.disabled = true;
-    loadSamplesBtn.textContent = 'Loading…';
-    try {
-      for (const s of SAMPLE_LISTINGS) {
-        await api('/listings', { method: 'POST', body: JSON.stringify(s) });
-      }
-      showToast('3 sample listings added.');
-      await loadListings();
-    } catch (e) {
-      showToast('Could not load sample listings.');
-    } finally {
-      loadSamplesBtn.disabled = false;
-      loadSamplesBtn.textContent = 'Load 3 sample listings';
-    }
-  });
-}
 
 // ===================== MESSAGING =====================
 function showInlineCompose(listingId) {
@@ -1735,10 +1846,22 @@ function handleVerifyRedirect() {
   window.history.replaceState({}, '', url.toString());
 }
 
+function handleResetTokenRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('resetToken');
+  if (!token) return;
+  document.getElementById('auth-overlay').classList.add('show');
+  handleResetPassword(token);
+  const url = new URL(window.location.href);
+  url.searchParams.delete('resetToken');
+  window.history.replaceState({}, '', url.toString());
+}
+
 renderChips();
 populateCategorySelect();
 renderPhotoGrid();
 routeFromLocation();
 loadRecentlySold();
 refreshCurrentUser().then(handleVerifyRedirect);
+handleResetTokenRedirect();
 api('/stats/pageview', { method: 'POST' }).catch(() => {});

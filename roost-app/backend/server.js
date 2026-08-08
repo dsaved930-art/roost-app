@@ -19,6 +19,7 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/saved-searches', require('./routes/savedSearches'));
 app.use('/api/verification', require('./routes/verification'));
 app.use('/api/stats', require('./routes/stats'));
+app.use('/api/geocode', require('./routes/geocode'));
 
 // SEO: real, crawlable, individually-addressable pages for each listing —
 // this is what lets Google (and link previews on social/messaging apps)

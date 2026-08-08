@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { requireAdmin, requireAuth, setAuthCookie } = require('../middleware/auth');
+const { requireAdmin, requireAuth } = require('../middleware/auth');
 const { notifySavedSearches } = require('../services/alerts');
-
-function normalizeEmail(e) { return String(e || '').trim().toLowerCase(); }
-function isValidEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+const { geocodeCityState } = require('../utils/geocode');
 
 // Browse — summaries only. Contact info is never included here, at all, for anyone.
 // Sold listings are excluded here so buyers don't wade through unavailable
@@ -14,7 +12,7 @@ router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT l.id, l.title, l.category, l.breed, l.age, l.sex, l.free, l.price, l.open_to_trade AS "openToTrade", l.city, l.state,
-              l.photo_thumb AS "photoUrl", l.created_at AS "createdAt",
+              l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.lat, l.lon,
               COALESCE(u.verification_status = 'verified', FALSE) AS "sellerVerified"
        FROM listings l LEFT JOIN users u ON u.id = l.posted_by
        WHERE l.sold = FALSE
@@ -136,10 +134,10 @@ router.get('/:id', async (req, res) => {
 // an email as their contact method, this creates (or reuses) an account for them and
 // signs them in, the same behavior the prototype had — except this version is real:
 // the account genuinely exists in the database, with a real id, not just in memory.
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const b = req.body || {};
-    const required = ['title', 'category', 'breed', 'city', 'state', 'description', 'posterName', 'contactMethod', 'contactValue'];
+    const required = ['title', 'category', 'city', 'state', 'description', 'contactMethod', 'contactValue'];
     for (const f of required) {
       if (!b[f] || !String(b[f]).trim()) return res.status(400).json({ error: `Missing required field: ${f}` });
     }
@@ -161,26 +159,10 @@ router.post('/', async (req, res) => {
     const coverThumb = photos.length > 0 ? photos[0].thumb : null;
     const coverFull = photos.length > 0 ? photos[0].full : null;
 
-    let postedByUserId = null;
-
-    if (req.user) {
-      postedByUserId = req.user.id;
-    } else if (b.contactMethod === 'Email' && isValidEmail(normalizeEmail(b.contactValue))) {
-      const email = normalizeEmail(b.contactValue);
-      const existing = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-      let user;
-      if (existing.rows.length === 0) {
-        const inserted = await pool.query(
-          'INSERT INTO users (name, email, auto_created, role) VALUES ($1, $2, TRUE, $3) RETURNING *',
-          [b.posterName, email, 'user']
-        );
-        user = inserted.rows[0];
-      } else {
-        user = existing.rows[0];
-      }
-      postedByUserId = user.id;
-      setAuthCookie(res, user); // sign them in for this session, same as before
-    }
+    // Posting now always requires a real signed-in account (requireAuth above),
+    // so posted_by is always known and poster name can default to the account
+    // name if the seller left that field blank.
+    const posterName = (b.posterName && String(b.posterName).trim()) || req.user.name;
 
     const inserted = await pool.query(
       `INSERT INTO listings
@@ -189,9 +171,9 @@ router.post('/', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [
-        b.title, b.category, b.breed, b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
+        b.title, b.category, b.breed || '', b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
         b.city, b.state, b.description, coverThumb, coverFull,
-        b.category === 'RAP' ? b.permitNumber : null, b.posterName, b.contactMethod, b.contactValue, postedByUserId
+        b.category === 'RAP' ? b.permitNumber : null, posterName, b.contactMethod, b.contactValue, req.user.id
       ]
     );
     const newListing = inserted.rows[0];
@@ -208,6 +190,17 @@ router.post('/', async (req, res) => {
     // Fire after responding — a slow saved-search match/email round shouldn't
     // make the person who just posted wait for it.
     notifySavedSearches(newListing).catch(err => console.error('notifySavedSearches error:', err));
+
+    // Best-effort — if this fails or the city/state can't be resolved to
+    // coordinates, the listing still exists and just won't show a distance
+    // in search results. Never blocks or fails the listing creation itself.
+    geocodeCityState(newListing.city, newListing.state)
+      .then(coords => {
+        if (coords) {
+          return pool.query('UPDATE listings SET lat = $1, lon = $2 WHERE id = $3', [coords.lat, coords.lon, newListing.id]);
+        }
+      })
+      .catch(err => console.error('Geocoding update failed:', err));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Something went wrong publishing your listing.' });

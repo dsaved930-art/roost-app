@@ -379,6 +379,83 @@ worth knowing about how this was built:
   for each: rich results benefit from more images, but a link preview should
   show one clear photo, not try to cram several in.
 
+## Post-launch fixes (first round of real usage)
+
+Several changes made after the first live deploy, based on real testing:
+
+- **Sign-in is now required before posting**, full stop. The old "anyone can
+  post, we'll auto-create an account behind the scenes" behavior is gone —
+  `POST /api/listings` now requires `requireAuth`, and the frontend gates the
+  "Post a bird" tab behind sign-in. This was the root cause of a cluster of
+  confusing behavior: listings with no linked account (breaking the message
+  button with "this listing doesn't have a linked account to message"),
+  listings ending up attributed to the wrong account, and generally unclear
+  logged-in state. Listings created before this change may still be orphaned
+  (`posted_by IS NULL`) and unmessageable — there's no safe way to retroactively
+  guess whose account they belong to, so any left over from testing should be
+  deleted and reposted.
+- **`breed` and `posterName` are no longer required** to publish a listing.
+  `posterName` defaults to the signed-in account's name if left blank.
+- Required-field asterisks added to the post form, matching the above.
+- Removed the "Load 3 sample listings" dev/demo button and its code —  no
+  longer appropriate once real listings exist.
+- Added a favicon (the feather mark from the logo, as an SVG).
+
+## Forgot password
+
+A real "Forgot password?" flow, using the same SMTP setup as email
+verification and saved-search alerts.
+
+- `POST /api/auth/forgot-password` — always returns the same generic
+  response regardless of whether the email exists, specifically so this
+  endpoint can't be used to check which email addresses have Roost accounts.
+  Only actually sends an email if a matching account with a real password
+  exists (auto-created/unclaimed accounts are silently skipped, same reasoning).
+- The reset link is short-lived (1 hour) and single-use — any old unused
+  tokens for that account are deleted before a new one is issued.
+- `POST /api/auth/reset-password` verifies the token, sets the new password,
+  and signs the person straight in — same as a normal login. It also marks
+  the account as claimed (`auto_created = FALSE`), so this doubles as another
+  path to claim an account that was auto-created before this account model
+  changed, on top of the existing signup-with-same-email path.
+- The reset link points at `/?resetToken=...`; the frontend detects that
+  query param at boot, opens the auth modal straight into a "set new
+  password" screen, and cleans the token out of the URL afterward so it's
+  not left sitting in the browser history.
+
+## Real distance ("X miles away")
+
+Uses the US Census Bureau's geocoding API — free, no API key, no credit
+card, no spending cap to worry about. Chosen deliberately over Google Maps'
+Geocoding API for that reason, even though Google's is generally more
+accurate: Google requires a credit card on file even for free-tier usage,
+and has no default hard spending cap if traffic spikes unexpectedly.
+
+**The honest tradeoff:** the Census API is built primarily for full street
+addresses — it interpolates a point along a known address range — not bare
+"City, State" queries. It works well for many US cities, but won't find a
+match for every one. When it can't:
+
+- A listing's `lat`/`lon` just stay `NULL` (set via a best-effort geocode
+  right after the listing is created — this never blocks or slows down
+  posting, since it happens after the response is already sent).
+- Filtering by location falls back to the original city/state text match,
+  exactly like before this feature existed.
+- Nothing errors or breaks either way — every distance calculation checks
+  for real coordinates on both sides first, and only computes/shows a
+  distance when both are present.
+
+`utils/geocode.js` has both the geocoding call and the Haversine distance
+formula (verified against known real-world distances — NYC to LA computes
+to ~2,446 miles, matching the standard cited great-circle flight distance).
+The same formula is duplicated client-side in `app.js` so distance can be
+computed instantly while filtering, without a round-trip per listing.
+
+If this turns out to have a lower match rate than you'd like once it's
+live with real city names, switching to a different free geocoder (or
+biting the bullet on Google's card requirement) is a contained change —
+only `utils/geocode.js` would need to change, not the calling code.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:
