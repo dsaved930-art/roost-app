@@ -3,7 +3,6 @@ const router = express.Router();
 const pool = require('../db');
 const { hashPassword, comparePassword } = require('../utils/passwords');
 const { setAuthCookie, clearAuthCookie } = require('../middleware/auth');
-const { passport, googleConfigured } = require('../passport-setup');
 const { sendVerificationEmail } = require('../utils/emailVerification');
 const { sendPasswordResetEmail } = require('../utils/passwordReset');
 const { requireAuth } = require('../middleware/auth');
@@ -193,22 +192,6 @@ router.post('/reset-password', async (req, res) => {
     console.error(e);
     res.status(500).json({ error: 'Something went wrong resetting your password.' });
   }
-});
-
-router.get('/google-status', (req, res) => res.json({ enabled: googleConfigured }));
-
-router.get('/google', (req, res, next) => {
-  if (!googleConfigured) return res.redirect('/?google_unavailable=1');
-  passport.authenticate('google', { scope: ['profile', 'email'], session: false })(req, res, next);
-});
-
-router.get('/google/callback', (req, res, next) => {
-  if (!googleConfigured) return res.redirect('/?google_unavailable=1');
-  passport.authenticate('google', { session: false, failureRedirect: '/?google_failed=1' }, (err, user) => {
-    if (err || !user) return res.redirect('/?google_failed=1');
-    setAuthCookie(res, user);
-    res.redirect('/');
-  })(req, res, next);
 });
 
 module.exports = router;

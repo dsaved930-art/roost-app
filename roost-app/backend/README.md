@@ -14,8 +14,7 @@ backend/
   schema.sql            table definitions
   migrate.js            run schema.sql against your database
   middleware/auth.js    cookie verification + requireAdmin
-  passport-setup.js     optional Google OAuth
-  routes/auth.js        signup, login, logout, /me, Google routes
+  routes/auth.js        signup, login, logout, /me, forgot/reset password
   routes/listings.js    browse, detail (gated contact info), create, report, admin queue/delete
   routes/stats.js       pageview counter + admin dashboard
   utils/passwords.js    bcrypt hashing
@@ -44,7 +43,6 @@ You'll want to confirm this works on your own machine before deploying anywhere.
      ```
      node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
      ```
-   - Leave the Google fields blank for now — see step 4.
 
 3. Create the tables:
    ```
@@ -114,23 +112,30 @@ Domains, Cloudflare Registrar). In Render's dashboard, under your web service's
 it gives you (usually one CNAME record). Render handles HTTPS certificates
 automatically once DNS is pointed correctly.
 
-## 4. Turning on real "Continue with Google"
+## Google Sign-In (removed)
 
-This now actually works, once you have a live domain (Google requires a real,
-non-localhost redirect URL for production use):
+Google Sign-In was built and briefly live, then removed after Google's Safe
+Browsing flagged the deployed domain with "tries to trick visitors into
+sharing personal info," and Render suspended the account shortly after.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/) → create a project.
-2. **APIs & Services → OAuth consent screen** — set it up as "External," fill in
-   the basic app info.
-3. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
-   - Application type: Web application
-   - Authorized redirect URI: `https://yourdomain.com/api/auth/google/callback`
-4. Copy the Client ID and Client Secret into your production environment variables:
-   - `GOOGLE_CLIENT_ID`
-   - `GOOGLE_CLIENT_SECRET`
-   - `GOOGLE_CALLBACK_URL` = `https://yourdomain.com/api/auth/google/callback`
-5. Redeploy. The "Continue with Google" button will now actually authenticate
-   people instead of showing the "not configured" message.
+The likely (not 100% certain) cause: a "Sign in with Google" button
+redirecting to `accounts.google.com`, sitting on a randomly-generated free
+subdomain (`something.onrender.com`), is structurally very close to what
+real phishing kits look like to automated scanners — even though the OAuth
+flow itself was implemented correctly and legitimately. The scanner can't
+distinguish intent from that pattern alone.
+
+All of it has been removed: the frontend button, the `/api/auth/google`,
+`/api/auth/google/callback`, and `/api/auth/google-status` routes,
+`passport-setup.js`, and the `passport`/`passport-google-oauth20`
+dependencies from `package.json`. Email/password sign-up, sign-in, and
+password reset are unaffected — those never touched Google at all.
+
+If you want to bring this back later, the safer path is: get the app onto
+your own custom domain first (not a shared `onrender.com`/`vercel.app`
+address), then re-add Google Sign-In against that domain. A domain you
+control and that's been live for a while carries a real trust history a
+brand-new auto-generated subdomain doesn't have.
 
 ## In-app messaging
 
@@ -209,8 +214,7 @@ Two separate trust signals, both real:
 **Email verification** — automatic. Signup sends a confirmation link (via the
 same SMTP setup as saved-search alerts). Until it's clicked, the account's
 "Your account" panel shows an "email not verified" warning with a resend
-button. Google sign-ups skip this entirely since Google already confirmed
-that address.
+button.
 
 **Verified breeder status** — manual, admin-reviewed, since there's no paid
 identity-verification API wired in here (Stripe Identity, Persona, etc. would

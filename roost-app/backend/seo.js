@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const pool = require('./db');
 
-const frontendDir = path.join(__dirname, '..', 'frontend', 'public');
+const frontendDir = path.join(__dirname, 'public');
 const indexPath = path.join(frontendDir, 'index.html');
 
 function esc(s) {

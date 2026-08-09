@@ -2,14 +2,12 @@ require('dotenv').config();
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const path = require('path');
-const { passport } = require('./passport-setup');
 const { authOptional } = require('./middleware/auth');
 
 const app = express();
 
 app.use(express.json({ limit: '10mb' })); // photos are sent as base64, need more than Express's tiny default
 app.use(cookieParser());
-app.use(passport.initialize());
 app.use(authOptional); // attaches req.user (or null) on every request, from a real signed cookie
 
 app.use('/api/auth', require('./routes/auth'));
@@ -31,7 +29,7 @@ app.get('/robots.txt', seo.renderRobots);
 
 // Serve the frontend as static files, and hand back index.html for any other
 // route so the single-page app can handle its own navigation.
-const frontendDir = path.join(__dirname, '..', 'frontend', 'public');
+const frontendDir = path.join(__dirname, 'public');
 app.use(express.static(frontendDir));
 app.get('*', (req, res) => {
   res.sendFile(path.join(frontendDir, 'index.html'));
