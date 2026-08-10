@@ -460,6 +460,80 @@ live with real city names, switching to a different free geocoder (or
 biting the bullet on Google's card requirement) is a contained change —
 only `utils/geocode.js` would need to change, not the calling code.
 
+## Structured listing details (Phase 1 of the "competitive features" plan)
+
+Two new fields, seller-set at posting time, shown as scannable icon rows on
+the listing page rather than buried in free-text descriptions — directly
+motivated by real competitor research: "DNA sexed" was the single most
+repeated phrase across real listings on the biggest existing bird classifieds
+site, and it was always just typed into a paragraph, never structured.
+
+- **DNA sexed** and **Hand-tame** — each a tri-state field (`yes` / `no` /
+  `unknown`), stored as `TEXT` with a `CHECK` constraint rather than a plain
+  boolean, specifically to represent "seller didn't say" as a real, honest
+  state rather than defaulting silently to "no." Enforced both in the
+  dropdown (defaults to "? Not sure") and server-side — an unrecognized value
+  submitted directly to the API falls back to `'unknown'` rather than erroring
+  or being trusted as-is.
+- Displayed alongside the existing **Gender** (the `sex` field) and **Age**
+  fields in a single "Details" block, using small colored ✓ / ✕ / ? badges —
+  green for yes, red for no, gray for unspecified.
+- Deliberately **not shown on browse cards** — keeping cards fast to scan
+  (the FB Marketplace / Craigslist "glance in a few seconds" feel) was an
+  explicit design goal; the full details only show once someone's actually
+  interested enough to open a listing.
+- The description field is untouched — still free text, still where a
+  seller's personality and story live. This is additive structure, not a
+  replacement for it.
+- Shown identically on both the interactive listing page and the
+  server-rendered SEO version, so search engines and link previews see the
+  same structured facts a real visitor does.
+
+## Phase 2: Shipping toggle + pending/sold status
+
+- **Shipping available** — a checkbox on the post form, shown in the same
+  structured Details block as the Phase 1 fields (DNA sexed, Hand-tame).
+- **Listing status is now 3-state**, not a boolean: `active`, `pending`
+  (deposit received, not sold yet), or `sold`. This replaced the old `sold`
+  boolean as the source of truth via a new `status` column — the old
+  `sold`/`sold_at` columns are kept in sync on every write as a safety net,
+  not fully removed.
+- **The migration backfills existing data**: any listing already marked
+  `sold = TRUE` under the old model gets `status = 'sold'` automatically the
+  first time this runs.
+- **Pending listings stay visible in browse** (unlike sold, which is
+  filtered out) — with a "PENDING" banner on cards and a badge on the full
+  listing page, since a deal in progress is still real information worth
+  other buyers seeing.
+- **My Listings** has a 3-option status dropdown per listing instead of a
+  single toggle button.
+- `PATCH /api/listings/:id` now takes `{status: 'active'|'pending'|'sold'}`
+  — sending the old `{sold: boolean}` shape is rejected with a 400, not
+  silently misinterpreted.
+
+## Posting-time clarity + clickable logo
+
+- **Replaced the old "Just Listed" badge** (which only appeared for the
+  first 24 hours) with an always-visible small clock-icon chip showing how
+  long ago a listing was posted — "3h", "2d", "3w", "5mo" — on both cards
+  and the full listing page. This directly fixes a real ambiguity: the
+  bird's own age (e.g. "8 months") sat right next to the listing in a way
+  that could be misread as "posted 8 months ago." Posting time now has its
+  own clearly-iconified, always-present indicator, completely separate from
+  the bird's age field.
+- **The logo and "Roost" wordmark in the header are now a real link** back
+  to the homepage — clicking navigates within the app (no full page
+  reload) unless a modifier key is held, in which case it behaves like a
+  normal link (opens in a new tab, etc).
+
+## Header subtitle
+
+Settled on "A marketplace for bird lovers" — references the people, not
+just the transaction, and reads a bit warmer than a flat description. Not
+locked to a specific species-count language, so it won't need revisiting
+purely because of the eventual multi-species expansion (though "bird" will
+obviously need to change whenever that actually happens).
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

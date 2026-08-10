@@ -51,13 +51,27 @@ function verifiedBadgeHtml(mode) {
 function tradeBadgeHtml() {
   return `<span class="trade-badge" title="Seller is open to trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>Open to trade</span>`;
 }
-const JUST_LISTED_HOURS = 24;
-function isJustListed(createdAt) {
-  const ageMs = Date.now() - new Date(createdAt).getTime();
-  return ageMs >= 0 && ageMs < JUST_LISTED_HOURS * 60 * 60 * 1000;
+const CLOCK_ICON_PATH = 'M12 8v4l3 3 M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z';
+// Minimal, always-shown "how long ago was this posted" — deliberately
+// distinct from the bird's own age field, which is a completely different
+// piece of information and was easy to visually confuse with this one.
+function relativePostTime(createdAt) {
+  const diffMs = Date.now() - new Date(createdAt).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return mins + 'm';
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + 'h';
+  const days = Math.floor(hours / 24);
+  if (days < 7) return days + 'd';
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return weeks + 'w';
+  const months = Math.floor(days / 30);
+  if (months < 12) return months + 'mo';
+  return Math.floor(days / 365) + 'y';
 }
-function justListedBadgeHtml() {
-  return `<div class="just-listed-badge">Just listed</div>`;
+function postTimeBadgeHtml(createdAt) {
+  return `<div class="post-time-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${CLOCK_ICON_PATH}"></path></svg>${relativePostTime(createdAt)}</div>`;
 }
 function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
 function escapeAttr(s) { return escapeHtml(s); }
@@ -189,7 +203,8 @@ function renderGrid(results) {
     <a class="card" href="/listing/${l.id}" data-id="${l.id}">
       ${l.free ? '<div class="free-ribbon">FREE</div>' : ''}
       <div class="thumb">
-        ${isJustListed(l.createdAt) ? justListedBadgeHtml() : ''}
+        ${l.status === 'pending' ? '<div class="pending-ribbon">PENDING</div>' : ''}
+        ${postTimeBadgeHtml(l.createdAt)}
         <div class="thumb-img-wrap">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="" onerror="this.parentElement.innerHTML='${c.icon}'">` : c.icon}</div>
       </div>
       <div class="card-body">
@@ -222,6 +237,27 @@ function updateFilterBadge() {
 }
 
 // ===================== DETAIL MODAL =====================
+function traitRowHtml(iconEmoji, label, tristateValue) {
+  const symbol = tristateValue === 'yes' ? '✓' : tristateValue === 'no' ? '✕' : '?';
+  const displayText = tristateValue === 'yes' ? 'Yes' : tristateValue === 'no' ? 'No' : 'Not specified';
+  const cls = tristateValue === 'yes' ? 'yes' : tristateValue === 'no' ? 'no' : 'unknown';
+  return `<div class="trait-row"><span class="trait-icon ${cls}">${symbol}</span><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${displayText}</span></div>`;
+}
+function plainTraitRowHtml(iconEmoji, label, value) {
+  return `<div class="trait-row"><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${escapeHtml(value) || '?'}</span></div>`;
+}
+function buildDetailsBlockHtml(l) {
+  return `
+    <div class="lp-details">
+      <div class="lp-details-title">Details</div>
+      ${plainTraitRowHtml('🐦', 'Gender', l.sex)}
+      ${plainTraitRowHtml('🎂', 'Age', l.age)}
+      ${traitRowHtml('🧬', 'DNA sexed', l.dnaSexed)}
+      ${traitRowHtml('🤝', 'Hand-tame', l.handTame)}
+      ${traitRowHtml('🚚', 'Shipping available', l.shippingAvailable ? 'yes' : 'no')}
+    </div>`;
+}
+
 function buildListingPageHtml(l) {
   const c = catInfo(l.category);
   const photos = (Array.isArray(l.photos) && l.photos.length > 0)
@@ -270,12 +306,13 @@ function buildListingPageHtml(l) {
     <div class="lp-meta">${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')} ${l.sex ? '· ' + escapeHtml(l.sex) : ''} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}</div>
     ${permitLine}
     <div class="lp-photo" id="lp-main-photo">
-      ${isJustListed(l.createdAt) ? justListedBadgeHtml() : ''}
+      ${postTimeBadgeHtml(l.createdAt)}
       <div class="thumb-img-wrap">${photos.length > 0 ? `<img id="lp-main-img" src="${escapeAttr(photos[0].full)}" alt="" onerror="this.parentElement.innerHTML='${c.icon}'">` : c.icon}</div>
     </div>
     ${thumbStripHtml}
-    <div class="lp-price">${l.sold ? '<span class="sold-badge">SOLD</span> ' : ''}${l.free ? 'Free to a good home' : '$' + l.price}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
+    <div class="lp-price">${l.status === 'sold' ? '<span class="sold-badge">SOLD</span> ' : l.status === 'pending' ? '<span class="pending-badge">PENDING</span> ' : ''}${l.free ? 'Free to a good home' : '$' + l.price}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
     ${sellerLineHtml}
+    ${buildDetailsBlockHtml(l)}
     <div class="lp-desc">${escapeHtml(l.description)}</div>
     ${messageBtnHtml}
     <div id="inline-compose-wrap"></div>
@@ -521,6 +558,13 @@ document.getElementById('listing-back').addEventListener('click', () => {
   switchView('browse');
 });
 
+document.getElementById('brand-home-link').addEventListener('click', (e) => {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+  e.preventDefault();
+  window.history.pushState({}, '', '/');
+  switchView('browse');
+});
+
 document.getElementById('f-desc').addEventListener('input', (e) => {
   const text = e.target.value.toLowerCase();
   const hit = SCAM_PATTERNS.some(p => text.includes(p));
@@ -661,8 +705,11 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
     breed: document.getElementById('f-breed').value.trim(),
     age: document.getElementById('f-age').value.trim(),
     sex: document.getElementById('f-sex').value,
+    dnaSexed: document.getElementById('f-dna-sexed').value,
+    handTame: document.getElementById('f-hand-tame').value,
     free: document.getElementById('f-free').checked,
     openToTrade: document.getElementById('f-trade').checked,
+    shippingAvailable: document.getElementById('f-shipping').checked,
     price: document.getElementById('f-price').value,
     city: document.getElementById('f-city').value.trim(),
     state: document.getElementById('f-state').value.trim().toUpperCase(),
@@ -706,6 +753,7 @@ document.getElementById('post-another').addEventListener('click', () => {
   document.getElementById('f-sex').value = '';
   document.getElementById('f-free').checked = false;
   document.getElementById('f-trade').checked = false;
+  document.getElementById('f-shipping').checked = false;
   document.getElementById('f-price').disabled = false;
   document.getElementById('f-attest').checked = false;
   document.getElementById('f-agree-terms').checked = false;
@@ -1347,11 +1395,12 @@ async function loadMyListings() {
     listEl.innerHTML = listings.map(l => {
       const c = catInfo(l.category);
       const when = new Date(l.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+      const statusBadge = l.status === 'sold' ? '<span class="sold-badge">SOLD</span> ' : l.status === 'pending' ? '<span class="pending-badge">PENDING</span> ' : '';
       return `
-      <div class="myl-item ${l.sold ? 'myl-sold' : ''}" data-id="${l.id}">
+      <div class="myl-item ${l.status === 'sold' ? 'myl-sold' : ''}" data-id="${l.id}">
         <div class="myl-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
         <div class="myl-info">
-          <div class="myl-title">${l.sold ? '<span class="sold-badge">SOLD</span> ' : ''}${escapeHtml(l.title)} — ${l.free ? 'Free' : '$' + l.price}</div>
+          <div class="myl-title">${statusBadge}${escapeHtml(l.title)} — ${l.free ? 'Free' : '$' + l.price}</div>
           <div class="myl-meta">Posted ${when} · ${escapeHtml(catInfo(l.category).label)}</div>
           <div class="myl-stats">
             <span class="myl-stat">${statIconSvg(EYE_PATH_1, 13)} ${l.viewCount} view${l.viewCount === 1 ? '' : 's'}</span>
@@ -1360,7 +1409,11 @@ async function loadMyListings() {
           </div>
         </div>
         <div class="myl-actions">
-          <button class="secondary myl-sold-toggle" data-id="${l.id}" data-sold="${l.sold}">${l.sold ? 'Mark available' : 'Mark as sold'}</button>
+          <select class="myl-status-select" data-id="${l.id}">
+            <option value="active" ${l.status === 'active' ? 'selected' : ''}>Active</option>
+            <option value="pending" ${l.status === 'pending' ? 'selected' : ''}>Pending (deposit)</option>
+            <option value="sold" ${l.status === 'sold' ? 'selected' : ''}>Sold</option>
+          </select>
           <button class="secondary myl-duplicate" data-id="${l.id}">Duplicate</button>
           <button class="secondary myl-delete" data-id="${l.id}" style="color:var(--rust-dark);border-color:var(--rust);">Delete</button>
         </div>
@@ -1369,8 +1422,9 @@ async function loadMyListings() {
     listEl.querySelectorAll('.myl-item').forEach(item => {
       item.addEventListener('click', () => openDetail(item.dataset.id));
     });
-    listEl.querySelectorAll('.myl-sold-toggle').forEach(btn => {
-      btn.addEventListener('click', (e) => { e.stopPropagation(); toggleSold(btn.dataset.id, btn.dataset.sold !== 'true'); });
+    listEl.querySelectorAll('.myl-status-select').forEach(select => {
+      select.addEventListener('click', (e) => e.stopPropagation());
+      select.addEventListener('change', () => updateListingStatus(select.dataset.id, select.value));
     });
     listEl.querySelectorAll('.myl-duplicate').forEach(btn => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); duplicateListing(btn.dataset.id); });
@@ -1383,15 +1437,17 @@ async function loadMyListings() {
   }
 }
 
-async function toggleSold(id, makeSold) {
+async function updateListingStatus(id, status) {
   try {
-    await api('/listings/' + id, { method: 'PATCH', body: JSON.stringify({ sold: makeSold }) });
-    showToast(makeSold ? 'Marked as sold.' : 'Marked as available again.');
+    await api('/listings/' + id, { method: 'PATCH', body: JSON.stringify({ status }) });
+    const messages = { active: 'Marked as active.', pending: 'Marked as pending — still visible to buyers, flagged as a deal in progress.', sold: 'Marked as sold.' };
+    showToast(messages[status] || 'Listing updated.');
     loadMyListings();
   } catch (e) {
     showToast((e.data && e.data.error) || 'Could not update that listing.');
   }
 }
+
 
 // Pre-fills the post form from an existing listing so relisting a similar
 // bird (or a whole clutch, one at a time) takes seconds instead of retyping
@@ -1410,10 +1466,13 @@ async function duplicateListing(id) {
     document.getElementById('f-breed').value = l.breed || '';
     document.getElementById('f-age').value = l.age || '';
     document.getElementById('f-sex').value = l.sex || '';
+    document.getElementById('f-dna-sexed').value = l.dnaSexed || 'unknown';
+    document.getElementById('f-hand-tame').value = l.handTame || 'unknown';
     document.getElementById('f-free').checked = !!l.free;
     document.getElementById('f-price').value = l.free ? '' : l.price;
     document.getElementById('f-price').disabled = !!l.free;
     document.getElementById('f-trade').checked = !!l.openToTrade;
+    document.getElementById('f-shipping').checked = !!l.shippingAvailable;
     document.getElementById('f-city').value = l.city || '';
     document.getElementById('f-state').value = l.state || '';
     document.getElementById('f-desc').value = l.description || '';

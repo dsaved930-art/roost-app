@@ -36,7 +36,7 @@
 
 <header class="top">
   <div class="top-inner">
-    <div class="brand">
+    <a class="brand" href="/" id="brand-home-link">
       <div class="brand-mark">
         <svg viewBox="0 0 40 40" width="30" height="30">
           <path d="M32,8 C30,14 26,20 22,24 C18,28 13,30 8,32 C12,28 16,22 20,18 C24,14 28,10 32,8 Z"
@@ -52,9 +52,9 @@
       </div>
       <div>
         <h1>Roost</h1>
-        <small>bird classifieds</small>
+        <small>A marketplace for bird lovers</small>
       </div>
-    </div>
+    </a>
     <nav class="tabs">
       <button id="tab-browse" class="active">Browse</button>
       <button id="tab-post">Post a bird</button>
@@ -183,6 +183,25 @@
       </div>
     </div>
 
+    <div class="row2">
+      <div class="field">
+        <label for="f-dna-sexed">DNA sexed?</label>
+        <select id="f-dna-sexed">
+          <option value="unknown">? Not sure</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-hand-tame">Hand-tame?</label>
+        <select id="f-hand-tame">
+          <option value="unknown">? Not sure</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+    </div>
+
     <div class="field">
       <label for="f-price">Price <span class="required-asterisk">*</span></label>
       <input type="number" id="f-price" placeholder="150" min="0">
@@ -193,6 +212,10 @@
       <div class="free-toggle">
         <input type="checkbox" id="f-trade">
         <label for="f-trade" style="margin:0;font-weight:400;">Open to trades</label>
+      </div>
+      <div class="free-toggle">
+        <input type="checkbox" id="f-shipping">
+        <label for="f-shipping" style="margin:0;font-weight:400;">Shipping available</label>
       </div>
     </div>
 

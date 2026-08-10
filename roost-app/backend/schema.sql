@@ -62,6 +62,10 @@ CREATE TABLE IF NOT EXISTS listings (
   sold_at        TIMESTAMPTZ,
   lat            NUMERIC,          -- geocoded from city/state; NULL if geocoding failed or hasn't run
   lon            NUMERIC,
+  dna_sexed      TEXT NOT NULL DEFAULT 'unknown' CHECK (dna_sexed IN ('yes','no','unknown')),
+  hand_tame      TEXT NOT NULL DEFAULT 'unknown' CHECK (hand_tame IN ('yes','no','unknown')),
+  shipping_available BOOLEAN NOT NULL DEFAULT FALSE,
+  status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','pending','sold')),
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -176,6 +180,23 @@ ALTER TABLE listings ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_listings_sold ON listings (sold, sold_at DESC);
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS lat NUMERIC;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS lon NUMERIC;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS dna_sexed TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS hand_tame TEXT NOT NULL DEFAULT 'unknown';
+-- Constraints added separately (can't be part of ADD COLUMN IF NOT EXISTS) —
+-- these no-op safely on repeat runs since the constraint names are stable.
+DO $$ BEGIN
+  ALTER TABLE listings ADD CONSTRAINT listings_dna_sexed_check CHECK (dna_sexed IN ('yes','no','unknown'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE listings ADD CONSTRAINT listings_hand_tame_check CHECK (hand_tame IN ('yes','no','unknown'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS shipping_available BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+DO $$ BEGIN
+  ALTER TABLE listings ADD CONSTRAINT listings_status_check CHECK (status IN ('active','pending','sold'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+UPDATE listings SET status = 'sold' WHERE sold = TRUE AND status != 'sold';
 
 CREATE INDEX IF NOT EXISTS idx_users_verification_status ON users (verification_status);
 CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_token ON email_verification_tokens (token);

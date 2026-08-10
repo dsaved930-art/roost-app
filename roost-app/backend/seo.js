@@ -10,6 +10,26 @@ function esc(s) {
 }
 function escAttr(s) { return esc(s); }
 
+const CLOCK_ICON_PATH = 'M12 8v4l3 3 M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z';
+function relativePostTime(createdAt) {
+  const diffMs = Date.now() - new Date(createdAt).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return mins + 'm';
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + 'h';
+  const days = Math.floor(hours / 24);
+  if (days < 7) return days + 'd';
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return weeks + 'w';
+  const months = Math.floor(days / 30);
+  if (months < 12) return months + 'mo';
+  return Math.floor(days / 365) + 'y';
+}
+function postTimeBadgeHtml(createdAt) {
+  return `<div class="post-time-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${CLOCK_ICON_PATH}"></path></svg>${relativePostTime(createdAt)}</div>`;
+}
+
 function publicUrl() {
   return (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
 }
@@ -22,6 +42,16 @@ const CATEGORY_LABELS = {
 // Builds the same visual markup the client renders (see buildListingPageHtml
 // in app.js) so there's no flash-of-different-content once JS takes over —
 // this version just has no interactive buttons, since a crawler doesn't need them.
+function ssrTraitRow(iconEmoji, label, tristateValue) {
+  const symbol = tristateValue === 'yes' ? '✓' : tristateValue === 'no' ? '✕' : '?';
+  const displayText = tristateValue === 'yes' ? 'Yes' : tristateValue === 'no' ? 'No' : 'Not specified';
+  const cls = tristateValue === 'yes' ? 'yes' : tristateValue === 'no' ? 'no' : 'unknown';
+  return `<div class="trait-row"><span class="trait-icon ${cls}">${symbol}</span><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${displayText}</span></div>`;
+}
+function ssrPlainTraitRow(iconEmoji, label, value) {
+  return `<div class="trait-row"><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${esc(value) || '?'}</span></div>`;
+}
+
 function staticListingHtml(l) {
   const categoryLabel = CATEGORY_LABELS[l.category] || l.category;
   const photo = l.photo_full || l.photo_thumb;
@@ -31,10 +61,18 @@ function staticListingHtml(l) {
     <h1>${esc(l.title)}</h1>
     <div class="lp-meta">${esc(l.breed)} · ${esc(l.age || 'age n/a')} ${l.sex ? '· ' + esc(l.sex) : ''} · ${esc(l.city)}, ${esc(l.state)}</div>
     <div class="lp-photo">
-      ${(Date.now() - new Date(l.created_at).getTime()) < 24 * 60 * 60 * 1000 ? '<div class="just-listed-badge">Just listed</div>' : ''}
+      ${postTimeBadgeHtml(l.created_at)}
       ${photo ? `<img src="${escAttr(photo)}" alt="${escAttr(l.title)}">` : ''}
     </div>
-    <div class="lp-price">${l.sold ? '<span class="sold-badge">SOLD</span> ' : ''}${priceText}${l.open_to_trade ? ' · Open to trade' : ''}</div>
+    <div class="lp-price">${l.status === 'sold' ? '<span class="sold-badge">SOLD</span> ' : l.status === 'pending' ? '<span class="pending-badge">PENDING</span> ' : ''}${priceText}${l.open_to_trade ? ' · Open to trade' : ''}</div>
+    <div class="lp-details">
+      <div class="lp-details-title">Details</div>
+      ${ssrPlainTraitRow('🐦', 'Gender', l.sex)}
+      ${ssrPlainTraitRow('🎂', 'Age', l.age)}
+      ${ssrTraitRow('🧬', 'DNA sexed', l.dna_sexed)}
+      ${ssrTraitRow('🤝', 'Hand-tame', l.hand_tame)}
+      ${ssrTraitRow('🚚', 'Shipping available', l.shipping_available ? 'yes' : 'no')}
+    </div>
     <div class="lp-desc">${esc(l.description)}</div>
   `;
 }
