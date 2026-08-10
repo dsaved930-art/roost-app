@@ -43,10 +43,8 @@ const CATEGORY_LABELS = {
 // in app.js) so there's no flash-of-different-content once JS takes over —
 // this version just has no interactive buttons, since a crawler doesn't need them.
 function ssrTraitRow(iconEmoji, label, tristateValue) {
-  const symbol = tristateValue === 'yes' ? '✓' : tristateValue === 'no' ? '✕' : '?';
   const displayText = tristateValue === 'yes' ? 'Yes' : tristateValue === 'no' ? 'No' : 'Not specified';
-  const cls = tristateValue === 'yes' ? 'yes' : tristateValue === 'no' ? 'no' : 'unknown';
-  return `<div class="trait-row"><span class="trait-icon ${cls}">${symbol}</span><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${displayText}</span></div>`;
+  return `<div class="trait-row"><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${displayText}</span></div>`;
 }
 function ssrPlainTraitRow(iconEmoji, label, value) {
   return `<div class="trait-row"><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${esc(value) || '?'}</span></div>`;
@@ -59,7 +57,7 @@ function staticListingHtml(l) {
   return `
     <div class="lp-band">${esc(categoryLabel)}</div>
     <h1>${esc(l.title)}</h1>
-    <div class="lp-meta">${esc(l.breed)} · ${esc(l.age || 'age n/a')} ${l.sex ? '· ' + esc(l.sex) : ''} · ${esc(l.city)}, ${esc(l.state)}</div>
+    <div class="lp-meta">${esc(l.breed)} ${l.sex ? '· ' + esc(l.sex) : ''} · ${esc(l.city)}, ${esc(l.state)}</div>
     <div class="lp-photo">
       ${postTimeBadgeHtml(l.created_at)}
       ${photo ? `<img src="${escAttr(photo)}" alt="${escAttr(l.title)}">` : ''}

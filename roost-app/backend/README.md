@@ -534,6 +534,32 @@ locked to a specific species-count language, so it won't need revisiting
 purely because of the eventual multi-species expansion (though "bird" will
 obviously need to change whenever that actually happens).
 
+## Phone formatting, cleaner Details block, white background
+
+- **Phone numbers display formatted** (`209-954-6556` instead of the raw
+  digits), regardless of how they were originally entered — handles plain
+  digits, parens, spaces, and an optional leading "1" country code, and
+  falls back to showing the raw value untouched for anything that isn't a
+  recognizable 10 or 11-digit US number, rather than mangling it. Also
+  auto-formats on the post form when a seller tabs away from the field.
+- **A "Call" button now sits next to a phone contact**, using a real `tel:`
+  link — only shown for phone contacts, never for email.
+- **Removed the duplicate age** from the subtitle line under a listing's
+  title (it's still shown properly in the Details block below — this was
+  just removing a confusing duplicate, not removing the information).
+- **Simplified the Details block** to match Petfinder's cleaner look: no
+  more grey box border around the whole section, and no more colored
+  ✓/✕/? icon circle before each field — just the emoji, the label, and a
+  plain "Yes" / "No" / "Not specified".
+- **Page background changed to white**, matching the header. Deliberately
+  changed only `body`'s specific background rule, not the shared
+  `--canvas` CSS variable itself — that variable is still used correctly
+  in ~20 other places (thumbnail placeholders, stat cards, etc.) that
+  intentionally want a neutral grey for contrast against white cards.
+  Removed the header's bottom border to match the flatter look.
+- **"Recently Sold" cards are about 25% bigger** — closer to Facebook
+  Marketplace's scale, without going all the way there.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

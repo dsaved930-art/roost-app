@@ -74,6 +74,21 @@ function postTimeBadgeHtml(createdAt) {
   return `<div class="post-time-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${CLOCK_ICON_PATH}"></path></svg>${relativePostTime(createdAt)}</div>`;
 }
 function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
+
+// Formats a US phone number as XXX-XXX-XXXX for display. Falls back to
+// showing the raw value untouched for anything that isn't a recognizable
+// 10 or 11-digit US number (international numbers, partial entries, etc.)
+// rather than mangling it.
+function formatPhoneDisplay(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  if (digits.length === 11 && digits[0] === '1') return `${digits.slice(1, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+  return raw || '';
+}
+function phoneDigitsForTel(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  return digits.length === 10 ? '1' + digits : digits;
+}
 function escapeAttr(s) { return escapeHtml(s); }
 
 let currentCategory = 'all';
@@ -238,10 +253,8 @@ function updateFilterBadge() {
 
 // ===================== DETAIL MODAL =====================
 function traitRowHtml(iconEmoji, label, tristateValue) {
-  const symbol = tristateValue === 'yes' ? '✓' : tristateValue === 'no' ? '✕' : '?';
   const displayText = tristateValue === 'yes' ? 'Yes' : tristateValue === 'no' ? 'No' : 'Not specified';
-  const cls = tristateValue === 'yes' ? 'yes' : tristateValue === 'no' ? 'no' : 'unknown';
-  return `<div class="trait-row"><span class="trait-icon ${cls}">${symbol}</span><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${displayText}</span></div>`;
+  return `<div class="trait-row"><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${displayText}</span></div>`;
 }
 function plainTraitRowHtml(iconEmoji, label, value) {
   return `<div class="trait-row"><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${escapeHtml(value) || '?'}</span></div>`;
@@ -279,10 +292,21 @@ function buildListingPageHtml(l) {
         : `<span class="rating-text">No reviews yet</span>`}
     </div>` : '';
 
+  const isPhoneContact = l.contactMethod === 'Phone';
+  const contactDisplayValue = isPhoneContact ? formatPhoneDisplay(l.contactValue) : (l.contactValue || '');
+  const callButtonHtml = isPhoneContact && l.contactValue
+    ? `<a class="call-btn" href="tel:${escapeAttr(phoneDigitsForTel(l.contactValue))}">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+         Call
+       </a>` : '';
+
   const contactBoxHtml = (l.contactLocked === undefined) ? '' : (!l.contactLocked ? `
     <div class="contact-box">
       <div class="label">${l.contactMethod || 'Contact'}</div>
-      <div class="value">${escapeHtml(l.contactValue) || 'Not provided'}</div>
+      <div class="value-row">
+        <div class="value">${escapeHtml(contactDisplayValue) || 'Not provided'}</div>
+        ${callButtonHtml}
+      </div>
     </div>` : `
     <div class="contact-locked">
       <p>Sign in to see how to contact this seller.</p>
@@ -303,7 +327,7 @@ function buildListingPageHtml(l) {
       </button>
     </div>
     <h1>${escapeHtml(l.title)}</h1>
-    <div class="lp-meta">${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')} ${l.sex ? '· ' + escapeHtml(l.sex) : ''} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}</div>
+    <div class="lp-meta">${escapeHtml(l.breed)} ${l.sex ? '· ' + escapeHtml(l.sex) : ''} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}</div>
     ${permitLine}
     <div class="lp-photo" id="lp-main-photo">
       ${postTimeBadgeHtml(l.createdAt)}
@@ -583,6 +607,12 @@ document.getElementById('f-contact-method').addEventListener('change', (e) => {
   } else {
     valueField.placeholder = 'you@email.com';
     valueField.type = 'text';
+  }
+});
+
+document.getElementById('f-contact-value').addEventListener('blur', (e) => {
+  if (document.getElementById('f-contact-method').value === 'Phone' && e.target.value.trim()) {
+    e.target.value = formatPhoneDisplay(e.target.value.trim());
   }
 });
 
