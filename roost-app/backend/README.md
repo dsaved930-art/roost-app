@@ -560,6 +560,31 @@ obviously need to change whenever that actually happens).
 - **"Recently Sold" cards are about 25% bigger** — closer to Facebook
   Marketplace's scale, without going all the way there.
 
+## Expanded Site Stats
+
+Real data the app already had, just not surfaced yet — no new tracking,
+no third-party tool, everything computed directly from existing tables.
+
+- **Growth, last 8 weeks** — new listings and new signups per week, as
+  small bar charts, so you can actually see if outreach is working rather
+  than staring at one cumulative number.
+- **Where listings are coming from** — top cities/states by listing count.
+  Directly useful for the "prove one region dense before expanding"
+  strategy — shows exactly where there's already real density vs. where
+  it's thin.
+- **By category** — which bird communities are actually posting.
+- **Engagement funnel** — total listing views, total buyer-seller
+  conversations started, and the percentage of views that turned into a
+  message. This is the real "is it working" number, not just traffic.
+- **Average days to sell**, verified breeder count, and how many buyers
+  have at least one saved search — smaller signals, still real.
+
+The honest boundary, worth remembering: this can only ever show what the
+app's own database already captures. It has no idea which page someone
+came from, whether they're a repeat visitor, or their device/location —
+that requires an actual visitor-tracking tool (Google Analytics, Plausible,
+etc.), not something to try to rebuild here.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

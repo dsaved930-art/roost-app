@@ -178,6 +178,21 @@
   .stats-sub{font-size:13px;color:var(--muted);margin-bottom:20px;}
   .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
   .stat-card{background:var(--canvas);border-radius:10px;padding:16px;}
+  .stats-section-title{font-family:'IBM Plex Mono',monospace;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin:22px 0 10px;padding-top:14px;border-top:1px solid var(--line);}
+  .stats-subhead{font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;}
+  .stats-empty-note{font-size:12px;color:var(--muted);padding:10px 0;}
+  .week-bars{display:flex;align-items:flex-end;gap:6px;height:90px;}
+  .week-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;}
+  .week-bar-track{flex:1;width:100%;display:flex;align-items:flex-end;}
+  .week-bar-fill{width:100%;background:var(--primary);border-radius:3px 3px 0 0;min-height:4px;}
+  .week-bar-count{font-size:10px;font-weight:600;color:var(--ink);margin-top:4px;}
+  .week-bar-label{font-size:9px;color:var(--muted);margin-top:2px;white-space:nowrap;}
+  .stats-bar-list{margin-bottom:8px;}
+  .stats-bar-row{display:grid;grid-template-columns:130px 1fr 30px;align-items:center;gap:10px;padding:5px 0;font-size:12px;}
+  .stats-bar-label{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .stats-bar-track{background:var(--canvas);border-radius:4px;height:8px;overflow:hidden;}
+  .stats-bar-fill{height:100%;background:var(--primary);border-radius:4px;}
+  .stats-bar-count{color:var(--muted);text-align:right;font-family:'IBM Plex Mono',monospace;}
   .stat-card .num{font-family:'Public Sans',sans-serif;font-size:26px;font-weight:700;color:var(--primary-dark);letter-spacing:-0.3px;}
   .stat-card .label{font-size:12px;color:var(--muted);margin-top:2px;}
   .stats-note{font-size:11px;color:var(--muted);line-height:1.6;background:var(--canvas);border-radius:8px;padding:10px 12px;}

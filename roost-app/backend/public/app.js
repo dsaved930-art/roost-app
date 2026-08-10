@@ -1055,12 +1055,44 @@ document.getElementById('modqueue-close').addEventListener('click', () => docume
 document.getElementById('modqueue-overlay').addEventListener('click', (e) => { if (e.target.id === 'modqueue-overlay') document.getElementById('modqueue-overlay').classList.remove('show'); });
 
 // ===================== STATS (admin-only, real server counts) =====================
+function weeklyBarChartHtml(rows, label) {
+  if (!rows || rows.length === 0) return `<div class="stats-empty-note">No ${label.toLowerCase()} yet in the last 8 weeks.</div>`;
+  const max = Math.max(...rows.map(r => r.count), 1);
+  return `<div class="week-bars">${rows.map(r => `
+    <div class="week-bar-col">
+      <div class="week-bar-track"><div class="week-bar-fill" style="height:${Math.max(4, (r.count / max) * 100)}%;" title="${r.count}"></div></div>
+      <div class="week-bar-count">${r.count}</div>
+      <div class="week-bar-label">${r.week}</div>
+    </div>`).join('')}</div>`;
+}
+function topLocationsHtml(rows) {
+  if (!rows || rows.length === 0) return `<div class="stats-empty-note">No listings yet.</div>`;
+  const max = Math.max(...rows.map(r => r.count), 1);
+  return rows.map(r => `
+    <div class="stats-bar-row">
+      <div class="stats-bar-label">${escapeHtml(r.city)}, ${escapeHtml(r.state)}</div>
+      <div class="stats-bar-track"><div class="stats-bar-fill" style="width:${(r.count / max) * 100}%;"></div></div>
+      <div class="stats-bar-count">${r.count}</div>
+    </div>`).join('');
+}
+function categoryBreakdownHtml(rows) {
+  if (!rows || rows.length === 0) return `<div class="stats-empty-note">No listings yet.</div>`;
+  const max = Math.max(...rows.map(r => r.count), 1);
+  return rows.map(r => `
+    <div class="stats-bar-row">
+      <div class="stats-bar-label">${escapeHtml(catInfo(r.category).label)}</div>
+      <div class="stats-bar-track"><div class="stats-bar-fill" style="width:${(r.count / max) * 100}%;background:${catInfo(r.category).color};"></div></div>
+      <div class="stats-bar-count">${r.count}</div>
+    </div>`).join('');
+}
+
 async function openStats() {
   document.getElementById('stats-overlay').classList.add('show');
   const body = document.getElementById('stats-body');
   body.innerHTML = 'Loading…';
   try {
     const s = await api('/stats');
+    const messageRate = s.totalListingViews > 0 ? Math.round((s.totalConversations / s.totalListingViews) * 100) : 0;
     body.innerHTML = `
       <div class="stats-grid">
         <div class="stat-card"><div class="num">${s.pageviews || 0}</div><div class="label">Page loads (all time)</div></div>
@@ -1068,7 +1100,30 @@ async function openStats() {
         <div class="stat-card"><div class="num">${s.accounts || 0}</div><div class="label">Accounts created</div></div>
         <div class="stat-card"><div class="num">${s.listingsPosted || 0}</div><div class="label">Listings ever posted</div></div>
       </div>
-      <div class="stats-grid" style="grid-template-columns:1fr;">
+
+      <div class="stats-section-title">Growth — last 8 weeks</div>
+      <div class="stats-grid" style="grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+        <div><div class="stats-subhead">New listings</div>${weeklyBarChartHtml(s.weeklyListings, 'listings')}</div>
+        <div><div class="stats-subhead">New signups</div>${weeklyBarChartHtml(s.weeklySignups, 'signups')}</div>
+      </div>
+
+      <div class="stats-section-title">Where listings are coming from</div>
+      <div class="stats-bar-list">${topLocationsHtml(s.topLocations)}</div>
+
+      <div class="stats-section-title">By category</div>
+      <div class="stats-bar-list">${categoryBreakdownHtml(s.categoryBreakdown)}</div>
+
+      <div class="stats-section-title">Engagement — is it actually working?</div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="num">${s.totalListingViews || 0}</div><div class="label">Total listing views</div></div>
+        <div class="stat-card"><div class="num">${s.totalConversations || 0}</div><div class="label">Buyer-seller conversations started</div></div>
+        <div class="stat-card"><div class="num">${messageRate}%</div><div class="label">Views that led to a message</div></div>
+        <div class="stat-card"><div class="num">${s.avgDaysToSale != null ? s.avgDaysToSale : '—'}</div><div class="label">Avg. days to sell</div></div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="num">${s.verifiedBreeders || 0}</div><div class="label">Verified breeders</div></div>
+        <div class="stat-card"><div class="num">${s.savedSearchUsers || 0}</div><div class="label">Buyers with a saved search</div></div>
+        <div class="stat-card"><div class="num">${s.totalMessages || 0}</div><div class="label">Total messages sent</div></div>
         <div class="stat-card"><div class="num">${s.reportedListings || 0}</div><div class="label">Listings reported at least once</div></div>
       </div>
     `;
