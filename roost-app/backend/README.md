@@ -656,6 +656,38 @@ borderless cards with a hover-only shadow, matching the reference look.
   applied. Caught by re-checking the actual HTML against the CSS rather
   than assuming, and fixed before shipping.
 
+## Photo cropping, location modal, sidebar polish
+
+Four real, diagnosable bugs from the sidebar redesign, not guesses:
+
+- **Heads/feet getting cropped off in photos, worst on card thumbnails.**
+  Root cause: `.thumb` used a fixed `height:150px` with a variable
+  (much wider) width. `object-fit: cover` scales an image up until it
+  fully covers its box, then crops the overflow evenly from both sides —
+  for a typical tall/portrait phone photo forced into a short, wide box,
+  that means cropping a lot off both the top *and* bottom equally, which
+  is exactly "head cropped, feet cropped." Fixed by switching `.thumb` to
+  a `4:3` `aspect-ratio` instead of a fixed height — much closer to how
+  phones actually frame photos, so there's far less to crop away. This
+  also made thumbnails noticeably taller/bigger as a natural side effect,
+  which covers the "make images a little bigger" ask too — bumped the
+  grid's minimum card width slightly as well.
+- **Location popup's top covered by the header.** The header became
+  `position: sticky` in the redesign with `z-index: 60`, but the modal
+  overlay was still `z-index: 50` — lower, so the sticky header rendered
+  on top of it. Fixed by raising the overlay's z-index well above both the
+  header and the mobile filter drawer (which is `z-index: 100` — a modal
+  opened *from inside* the mobile drawer needed to clear that too, not
+  just the header, which wouldn't have been obvious from the desktop
+  screenshot alone).
+- **Sidebar scrollbar overlapping buttons, oval buttons looking clipped.**
+  The desktop sidebar's padding was accidentally set to `0` in the
+  redesign (an oversight, not intentional) — meaning every button
+  stretched edge-to-edge with zero breathing room, so their rounded
+  corners rendered right at the sidebar's exact boundary. Restored real
+  padding, and added `scrollbar-gutter: stable` so the scrollbar always
+  reserves its own space rather than overlapping content when it appears.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:
