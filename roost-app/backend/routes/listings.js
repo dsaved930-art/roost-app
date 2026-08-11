@@ -217,6 +217,82 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+// Edit an existing listing — owner only. Reuses the same validation as
+// creating one, since it's the same form on the frontend, just pre-filled.
+// Photos are fully replaced rather than diffed: simpler and correct, since
+// the frontend always sends the complete current set of photos either way.
+router.put('/:id', requireAuth, async (req, res) => {
+  try {
+    const check = await pool.query('SELECT posted_by FROM listings WHERE id = $1', [req.params.id]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    if (check.rows[0].posted_by !== req.user.id) {
+      return res.status(403).json({ error: 'You can only edit your own listings.' });
+    }
+
+    const b = req.body || {};
+    const required = ['title', 'category', 'city', 'state', 'description', 'contactMethod', 'contactValue'];
+    for (const f of required) {
+      if (!b[f] || !String(b[f]).trim()) return res.status(400).json({ error: `Missing required field: ${f}` });
+    }
+    if (!b.free && (b.price === undefined || b.price === null || Number(b.price) < 0)) {
+      return res.status(400).json({ error: 'Enter a price, or mark the listing free.' });
+    }
+    if (b.category === 'RAP' && !b.permitNumber) return res.status(400).json({ error: 'A falconry/raptor permit number is required to list a bird of prey.' });
+
+    const MAX_PHOTOS = 5;
+    let photos = [];
+    if (Array.isArray(b.photos) && b.photos.length > 0) {
+      photos = b.photos.filter(p => p && p.thumb && p.full).slice(0, MAX_PHOTOS);
+    }
+    const coverThumb = photos.length > 0 ? photos[0].thumb : null;
+    const coverFull = photos.length > 0 ? photos[0].full : null;
+
+    const posterName = (b.posterName && String(b.posterName).trim()) || req.user.name;
+    const VALID_TRISTATE = ['yes', 'no', 'unknown'];
+    const dnaSexed = VALID_TRISTATE.includes(b.dnaSexed) ? b.dnaSexed : 'unknown';
+    const handTame = VALID_TRISTATE.includes(b.handTame) ? b.handTame : 'unknown';
+
+    const updated = await pool.query(
+      `UPDATE listings SET
+         title = $1, category = $2, breed = $3, age = $4, sex = $5, free = $6, price = $7, open_to_trade = $8,
+         city = $9, state = $10, description = $11, photo_thumb = $12, photo_full = $13, permit_number = $14,
+         poster_name = $15, contact_method = $16, contact_value = $17, dna_sexed = $18, hand_tame = $19,
+         shipping_available = $20
+       WHERE id = $21
+       RETURNING *`,
+      [
+        b.title, b.category, b.breed || '', b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
+        b.city, b.state, b.description, coverThumb, coverFull,
+        b.category === 'RAP' ? b.permitNumber : null, posterName, b.contactMethod, b.contactValue,
+        dnaSexed, handTame, !!b.shippingAvailable, req.params.id
+      ]
+    );
+    const listing = updated.rows[0];
+
+    await pool.query('DELETE FROM listing_photos WHERE listing_id = $1', [req.params.id]);
+    for (let i = 0; i < photos.length; i++) {
+      await pool.query(
+        'INSERT INTO listing_photos (listing_id, photo_thumb, photo_full, position) VALUES ($1, $2, $3, $4)',
+        [listing.id, photos[i].thumb, photos[i].full, i]
+      );
+    }
+
+    res.json({ id: listing.id });
+
+    // Best-effort re-geocode, same as on creation — city/state may have changed.
+    geocodeCityState(listing.city, listing.state)
+      .then(coords => {
+        if (coords) {
+          return pool.query('UPDATE listings SET lat = $1, lon = $2 WHERE id = $3', [coords.lat, coords.lon, listing.id]);
+        }
+      })
+      .catch(err => console.error('Geocoding update failed:', err));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not save your changes.' });
+  }
+});
+
 router.post('/:id/report', async (req, res) => {
   try {
     const check = await pool.query('SELECT id FROM listings WHERE id = $1', [req.params.id]);

@@ -460,23 +460,31 @@ function showToast(msg) {
 document.getElementById('search-input').addEventListener('input', applyFilters);
 document.getElementById('sort-filter').addEventListener('change', applyFilters);
 
+function setSidebarDrawerOpen(open) {
+  document.getElementById('filter-panel').classList.toggle('show', open);
+  document.getElementById('filter-toggle').classList.toggle('active', open);
+  document.getElementById('sidebar-backdrop').classList.toggle('show', open);
+}
+
 document.getElementById('filter-toggle').addEventListener('click', () => {
-  const panel = document.getElementById('filter-panel');
-  panel.classList.toggle('show');
-  document.getElementById('filter-toggle').classList.toggle('active', panel.classList.contains('show'));
+  setSidebarDrawerOpen(!document.getElementById('filter-panel').classList.contains('show'));
+});
+document.getElementById('sidebar-close-mobile').addEventListener('click', () => setSidebarDrawerOpen(false));
+document.getElementById('sidebar-backdrop').addEventListener('click', () => setSidebarDrawerOpen(false));
+document.getElementById('sidebar-create-btn').addEventListener('click', () => {
+  setSidebarDrawerOpen(false);
+  document.getElementById('tab-post').click();
 });
 document.addEventListener('click', (e) => {
   const panel = document.getElementById('filter-panel');
   const toggle = document.getElementById('filter-toggle');
   if (panel.classList.contains('show') && !panel.contains(e.target) && !toggle.contains(e.target)) {
-    panel.classList.remove('show');
-    toggle.classList.remove('active');
+    setSidebarDrawerOpen(false);
   }
 });
 document.getElementById('apply-filters').addEventListener('click', () => {
   applyFilters();
-  document.getElementById('filter-panel').classList.remove('show');
-  document.getElementById('filter-toggle').classList.remove('active');
+  setSidebarDrawerOpen(false);
 });
 document.getElementById('clear-filters').addEventListener('click', () => {
   document.getElementById('price-min').value = '';
@@ -545,6 +553,7 @@ document.getElementById('clear-location').addEventListener('click', () => {
 document.getElementById('tab-browse').addEventListener('click', () => switchView('browse'));
 document.getElementById('tab-post').addEventListener('click', () => {
   if (!currentUser) { openAuthModal('signup', () => switchView('post')); return; }
+  if (editingListingId) resetPostForm(); // don't let a stale edit silently overwrite the wrong listing
   prefillPosterFields();
   switchView('post');
 });
@@ -618,6 +627,7 @@ document.getElementById('f-contact-value').addEventListener('blur', (e) => {
 
 // ===================== PHOTO UPLOAD =====================
 let pendingPhotos = []; // [{thumb, full}, ...] — first item is the cover photo
+let editingListingId = null; // set when the post form is being used to edit an existing listing, not create a new one
 
 // Phone cameras often store rotation as metadata rather than physically
 // rotating pixel data. A plain <img> respects that automatically, but
@@ -729,6 +739,8 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
     return;
   }
 
+  const isEditing = !!editingListingId;
+
   const body = {
     title: document.getElementById('f-title').value.trim(),
     category: document.getElementById('f-category').value,
@@ -758,29 +770,43 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
     return;
   }
   if (!body.free && (!body.price || Number(body.price) < 0)) { errEl.textContent = 'Enter a price, or check "free to a good home".'; return; }
-  if (!body.attested) { errEl.textContent = 'Please confirm the captive-bred and ownership attestation before publishing.'; return; }
-  if (!body.agreedTerms) { errEl.textContent = 'Please confirm you are 18+ and agree to the Terms of Service and Privacy Policy.'; return; }
+  // Attestation/Terms were already confirmed when the listing was first created —
+  // re-requiring them on every typo fix would just be friction, and the
+  // backend doesn't require them for edits either.
+  if (!isEditing && !body.attested) { errEl.textContent = 'Please confirm the captive-bred and ownership attestation before publishing.'; return; }
+  if (!isEditing && !body.agreedTerms) { errEl.textContent = 'Please confirm you are 18+ and agree to the Terms of Service and Privacy Policy.'; return; }
   if (body.category === 'RAP' && !body.permitNumber) { errEl.textContent = 'A falconry/raptor permit number is required to list a bird of prey.'; return; }
 
   const submitBtn = document.getElementById('submit-listing');
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Publishing…';
+  submitBtn.textContent = isEditing ? 'Saving…' : 'Publishing…';
   try {
-    await api('/listings', { method: 'POST', body: JSON.stringify(body) });
-    await refreshCurrentUser(); // posting without an account may have just created/signed one in
-    document.getElementById('post-form-wrap').style.display = 'none';
-    document.getElementById('post-success').style.display = 'block';
+    if (isEditing) {
+      await api('/listings/' + editingListingId, { method: 'PUT', body: JSON.stringify(body) });
+      const editedId = editingListingId;
+      editingListingId = null;
+      showToast('Listing updated.');
+      switchView('mylistings');
+      loadMyListings();
+    } else {
+      await api('/listings', { method: 'POST', body: JSON.stringify(body) });
+      await refreshCurrentUser(); // posting without an account may have just created/signed one in
+      document.getElementById('post-form-wrap').style.display = 'none';
+      document.getElementById('post-success').style.display = 'block';
+    }
   } catch (e) {
-    errEl.textContent = (e.data && e.data.error) || 'Something went wrong publishing your listing.';
+    errEl.textContent = (e.data && e.data.error) || (isEditing ? 'Could not save your changes.' : 'Something went wrong publishing your listing.');
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Publish listing';
+    submitBtn.textContent = editingListingId ? 'Save changes' : 'Publish listing';
   }
 });
 
-document.getElementById('post-another').addEventListener('click', () => {
+function resetPostForm() {
   document.querySelectorAll('#post-form-wrap input[type=text], #post-form-wrap input[type=tel], #post-form-wrap input[type=number], #post-form-wrap textarea').forEach(el => el.value = '');
   document.getElementById('f-sex').value = '';
+  document.getElementById('f-dna-sexed').value = 'unknown';
+  document.getElementById('f-hand-tame').value = 'unknown';
   document.getElementById('f-free').checked = false;
   document.getElementById('f-trade').checked = false;
   document.getElementById('f-shipping').checked = false;
@@ -796,7 +822,10 @@ document.getElementById('post-another').addEventListener('click', () => {
   document.getElementById('post-error').textContent = '';
   document.getElementById('post-form-wrap').style.display = 'block';
   document.getElementById('post-success').style.display = 'none';
-});
+  editingListingId = null;
+  document.getElementById('submit-listing').textContent = 'Publish listing';
+}
+document.getElementById('post-another').addEventListener('click', resetPostForm);
 
 // ===================== AUTH =====================
 let authSuccessCallback = null;
@@ -1499,6 +1528,7 @@ async function loadMyListings() {
             <option value="pending" ${l.status === 'pending' ? 'selected' : ''}>Pending (deposit)</option>
             <option value="sold" ${l.status === 'sold' ? 'selected' : ''}>Sold</option>
           </select>
+          <button class="secondary myl-edit" data-id="${l.id}">Edit</button>
           <button class="secondary myl-duplicate" data-id="${l.id}">Duplicate</button>
           <button class="secondary myl-delete" data-id="${l.id}" style="color:var(--rust-dark);border-color:var(--rust);">Delete</button>
         </div>
@@ -1510,6 +1540,9 @@ async function loadMyListings() {
     listEl.querySelectorAll('.myl-status-select').forEach(select => {
       select.addEventListener('click', (e) => e.stopPropagation());
       select.addEventListener('change', () => updateListingStatus(select.dataset.id, select.value));
+    });
+    listEl.querySelectorAll('.myl-edit').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); editListing(btn.dataset.id); });
     });
     listEl.querySelectorAll('.myl-duplicate').forEach(btn => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); duplicateListing(btn.dataset.id); });
@@ -1541,6 +1574,8 @@ async function updateListingStatus(id, status) {
 async function duplicateListing(id) {
   switchView('post');
   showToast('Loading listing details to duplicate…');
+  editingListingId = null;
+  document.getElementById('submit-listing').textContent = 'Publish listing';
   try {
     const data = await api('/listings/' + id);
     const l = data.listing;
@@ -1579,6 +1614,52 @@ async function duplicateListing(id) {
     showToast('Review the details below, then publish when ready.');
   } catch (e) {
     showToast('Could not load that listing to duplicate.');
+  }
+}
+
+async function editListing(id) {
+  switchView('post');
+  showToast('Loading your listing…');
+  try {
+    const data = await api('/listings/' + id);
+    const l = data.listing;
+
+    document.getElementById('f-title').value = l.title || '';
+    document.getElementById('f-category').value = l.category || '';
+    document.getElementById('f-category').dispatchEvent(new Event('change'));
+    document.getElementById('f-breed').value = l.breed || '';
+    document.getElementById('f-age').value = l.age || '';
+    document.getElementById('f-sex').value = l.sex || '';
+    document.getElementById('f-dna-sexed').value = l.dnaSexed || 'unknown';
+    document.getElementById('f-hand-tame').value = l.handTame || 'unknown';
+    document.getElementById('f-free').checked = !!l.free;
+    document.getElementById('f-price').value = l.free ? '' : l.price;
+    document.getElementById('f-price').disabled = !!l.free;
+    document.getElementById('f-trade').checked = !!l.openToTrade;
+    document.getElementById('f-shipping').checked = !!l.shippingAvailable;
+    document.getElementById('f-city').value = l.city || '';
+    document.getElementById('f-state').value = l.state || '';
+    document.getElementById('f-desc').value = l.description || '';
+    document.getElementById('f-poster-name').value = l.posterName || (currentUser ? currentUser.name : '');
+    document.getElementById('f-contact-method').value = l.contactMethod || 'Email';
+    document.getElementById('f-contact-method').dispatchEvent(new Event('change'));
+    document.getElementById('f-contact-value').value = l.contactValue || (currentUser ? currentUser.email : '');
+    if (l.category === 'RAP' && l.permitNumber) document.getElementById('f-permit').value = l.permitNumber;
+
+    if (Array.isArray(l.photos) && l.photos.length > 0) {
+      pendingPhotos = l.photos.map(p => ({ thumb: p.thumb, full: p.full }));
+    } else if (l.photoFull || l.photoUrl) {
+      pendingPhotos = [{ thumb: l.photoUrl || l.photoFull, full: l.photoFull || l.photoUrl }];
+    } else {
+      pendingPhotos = [];
+    }
+    renderPhotoGrid();
+
+    editingListingId = id;
+    document.getElementById('submit-listing').textContent = 'Save changes';
+    showToast('Editing your listing — update anything, then save.');
+  } catch (e) {
+    showToast('Could not load that listing to edit.');
   }
 }
 
@@ -1926,6 +2007,7 @@ function relativeTime(dateStr) {
 async function loadRecentlySold() {
   const section = document.getElementById('recently-sold-section');
   const strip = document.getElementById('recently-sold-strip');
+  if (!section || !strip) return; // temporarily not in the layout — revisit later
   try {
     const data = await api('/listings/sold');
     const sold = data.listings || [];

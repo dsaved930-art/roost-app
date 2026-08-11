@@ -69,70 +69,74 @@
   </div>
 </header>
 
-<main class="wrap" id="view-browse">
-  <div class="hero">
-    <h2>Find your next bird, or a good home for the one you have.</h2>
-    <p>Listings only — Roost doesn't handle payments or shipping. Arrange the details directly with the other person, and always meet in a safe, public place.</p>
-    <div class="search-row">
-      <input type="text" id="search-input" placeholder="Search by species, breed, or city…">
-      <button class="filter-btn" id="filter-toggle" aria-label="Filters">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2.2" fill="#fff"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="16" cy="12" r="2.2" fill="#fff"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2.2" fill="#fff"/></svg>
-        <span class="filter-badge" id="filter-badge" style="display:none;"></span>
-      </button>
-      <div class="filter-panel" id="filter-panel">
-        <div class="fp-group">
-          <label class="fp-label">Category</label>
-          <div class="panel-chips" id="category-chips"></div>
-        </div>
-        <div class="fp-group">
-          <label class="fp-label" for="sort-filter">Sort by</label>
-          <select id="sort-filter">
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
-            <option value="price-low">Price: low to high</option>
-            <option value="price-high">Price: high to low</option>
-          </select>
-        </div>
-        <div class="fp-group">
-          <label class="fp-label">Price range</label>
-          <div class="price-range-row">
-            <input type="number" id="price-min" placeholder="Min" min="0">
-            <span>–</span>
-            <input type="number" id="price-max" placeholder="Max" min="0">
-          </div>
-        </div>
-        <div class="fp-group">
-          <label class="ss-toggle" style="font-size:13px;">
-            <input type="checkbox" id="trade-filter"> Open to trades only
-          </label>
-        </div>
-        <div class="fp-group">
-          <button class="secondary save-search-btn" id="save-search-btn" style="width:100%;">☆ Save this search</button>
-          <div id="save-search-inline" style="display:none;margin-top:10px;">
-            <input type="text" id="save-search-name" placeholder="Name this search…" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:8px;">
-            <div class="auth-error" id="save-search-error" style="margin-bottom:8px;"></div>
-            <button class="primary" id="save-search-confirm" style="width:100%;">Save</button>
-          </div>
-        </div>
-        <div class="fp-actions">
-          <button class="secondary" id="clear-filters">Clear</button>
-          <button class="primary" id="apply-filters">Apply</button>
+<main class="wrap-full" id="view-browse">
+  <div class="browse-layout">
+    <aside class="browse-sidebar" id="filter-panel">
+      <button class="sidebar-close-mobile" id="sidebar-close-mobile" aria-label="Close filters">✕</button>
+
+      <div class="fp-group">
+        <input type="text" id="search-input" placeholder="Search by species, breed, or city…">
+      </div>
+      <div class="fp-group">
+        <button class="primary" id="sidebar-create-btn" style="width:100%;">+ Post a bird</button>
+      </div>
+      <div class="fp-group">
+        <button class="location-indicator unset" id="location-indicator">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg>
+          <span id="location-indicator-text">Choose a location</span>
+        </button>
+      </div>
+      <div class="fp-group">
+        <label class="fp-label">Category</label>
+        <div class="panel-chips" id="category-chips"></div>
+      </div>
+      <div class="fp-group">
+        <label class="fp-label" for="sort-filter">Sort by</label>
+        <select id="sort-filter">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="price-low">Price: low to high</option>
+          <option value="price-high">Price: high to low</option>
+        </select>
+      </div>
+      <div class="fp-group">
+        <label class="fp-label">Price range</label>
+        <div class="price-range-row">
+          <input type="number" id="price-min" placeholder="Min" min="0">
+          <span>–</span>
+          <input type="number" id="price-max" placeholder="Max" min="0">
         </div>
       </div>
+      <div class="fp-group">
+        <label class="ss-toggle" style="font-size:13px;">
+          <input type="checkbox" id="trade-filter"> Open to trades only
+        </label>
+      </div>
+      <div class="fp-group">
+        <button class="secondary save-search-btn" id="save-search-btn" style="width:100%;">☆ Save this search</button>
+        <div id="save-search-inline" style="display:none;margin-top:10px;">
+          <input type="text" id="save-search-name" placeholder="Name this search…" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:8px;">
+          <div class="auth-error" id="save-search-error" style="margin-bottom:8px;"></div>
+          <button class="primary" id="save-search-confirm" style="width:100%;">Save</button>
+        </div>
+      </div>
+      <div class="fp-actions">
+        <button class="secondary" id="clear-filters">Clear</button>
+        <button class="primary" id="apply-filters">Apply</button>
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <div class="browse-main">
+      <button class="mobile-filter-btn" id="filter-toggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2.2" fill="#fff"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="16" cy="12" r="2.2" fill="#fff"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2.2" fill="#fff"/></svg>
+        Filters
+        <span class="filter-badge" id="filter-badge" style="display:none;"></span>
+      </button>
+      <div class="count-line" id="count-line"></div>
+      <div class="grid" id="listings-grid"></div>
     </div>
-    <button class="location-indicator unset" id="location-indicator">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg>
-      <span id="location-indicator-text">Choose a location</span>
-    </button>
   </div>
-
-  <div id="recently-sold-section" style="display:none;">
-    <div class="rs-title">Recently sold on Roost</div>
-    <div class="rs-strip" id="recently-sold-strip"></div>
-  </div>
-
-  <div class="count-line" id="count-line"></div>
-  <div class="grid" id="listings-grid"></div>
 </main>
 
 <main class="wrap post-view" id="view-post" style="display:none;">

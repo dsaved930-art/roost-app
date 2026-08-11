@@ -585,6 +585,77 @@ came from, whether they're a repeat visitor, or their device/location —
 that requires an actual visitor-tracking tool (Google Analytics, Plausible,
 etc.), not something to try to rebuild here.
 
+## Editable listings
+
+Sellers can now fix a typo or change the price without deleting and
+reposting. An "Edit" button in My Listings opens the same post form,
+pre-filled — same UI as Duplicate, but it updates the existing listing
+(`PUT /api/listings/:id`) instead of creating a new one.
+
+- Ownership checked server-side the same way as delete/status-update — an
+  edit request for someone else's listing (or an orphaned listing with no
+  owner) is rejected with a 403, not silently allowed.
+- Editing doesn't require re-confirming the captive-bred/18+ attestation
+  checkboxes — those were already confirmed when the listing was first
+  created, and re-requiring them on every price fix would just be friction.
+  Both the frontend and backend skip that check specifically for edits.
+- Photos are fully replaced on save, not diffed — the frontend always
+  sends the complete current photo set (via the same multi-photo UI used
+  for creating a listing), so the backend just clears the old
+  `listing_photos` rows and inserts the new set. Simpler and correct.
+- City/state changes trigger a best-effort re-geocode, same as on creation,
+  so a listing's map coordinates (used for the real-distance search) stay
+  accurate if someone corrects their location.
+- Real bug caught and fixed while building this: if someone started editing,
+  navigated away without saving, then clicked "Post a bird" to start a
+  *new* listing, the form would still silently be in edit mode — meaning
+  submitting what looked like a fresh post could have overwritten their
+  other listing instead. Fixed by clearing edit-mode state whenever the
+  post form is entered via the main "Post a bird" tab specifically (an
+  in-progress *new* post draft is still preserved if you just navigate away
+  and back — only the specific stale-edit case is reset).
+
+## Removed the homepage subtitle paragraph
+
+The "Listings only — Roost doesn't handle payments..." line under the hero
+heading was removed for a cleaner homepage. The same safety message still
+appears on every individual listing page, right where a transaction
+actually happens — nothing was lost, just de-duplicated.
+
+## Browse page redesign — Facebook Marketplace-style sidebar
+
+The old top search bar + dropdown filter panel is gone, replaced with a
+left sidebar (search, quick "Post a bird" button, location, categories as
+a vertical list, sort, price range, trade toggle, save-search) — plus
+borderless cards with a hover-only shadow, matching the reference look.
+
+- **Mobile handling was the real design problem here, not an afterthought.**
+  A persistent sidebar doesn't fit a phone screen. Rather than build two
+  separate UIs, there's exactly one set of filter elements (same IDs, same
+  JS) that CSS repositions: a sticky column on screens ≥900px wide, or an
+  off-canvas slide-in drawer (triggered by a "Filters" button, closed via
+  an explicit close button, a backdrop tap, or clicking outside it) below
+  that width. No duplicated elements to keep in sync, no risk of the two
+  versions drifting apart over time.
+- **The header is now sticky too**, so it and the sidebar both stay visible
+  together while scrolling through listings — matching the "frozen"
+  behavior asked for.
+- **Categories switched from horizontal chips to a vertical list**, which
+  is the only categories layout that actually makes sense in a narrow
+  sidebar column — same underlying data and click handling, just restyled.
+- **"Recently Sold" was deliberately left out of this pass** (explicit
+  call, not an oversight) — the container was removed from the page, and
+  `loadRecentlySold()` now checks the container exists before doing
+  anything, so it's a clean no-op rather than an error. Nothing about the
+  underlying feature (the backend route, the data, the styling) was
+  deleted — it can come back by just re-adding the container markup.
+- **A real bug caught while wiring this up**: the location text span's
+  truncation CSS was accidentally written as a class selector
+  (`.location-indicator-text`) against an element that only has an `id`
+  (`#location-indicator-text`) — meaning it silently would have never
+  applied. Caught by re-checking the actual HTML against the CSS rather
+  than assuming, and fixed before shipping.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:
