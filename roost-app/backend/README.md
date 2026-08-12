@@ -688,6 +688,31 @@ Four real, diagnosable bugs from the sidebar redesign, not guesses:
   padding, and added `scrollbar-gutter: stable` so the scrollbar always
   reserves its own space rather than overlapping content when it appears.
 
+## Photo cropping — the actual fix (previous round was analysis only)
+
+Implemented what was discussed and approved: the detail-page fix plus
+squarer thumbnails, with the manual crop-adjustment tool intentionally
+left for later.
+
+- **Main listing photo no longer crops at all.** Switched from
+  `object-fit: cover` (crop to fill) to `object-fit: contain` (show the
+  whole image, letterboxed if needed) specifically on the detail page's
+  main photo — there's no reason to ever hide part of a photo on the one
+  view where someone's deciding whether to buy. The container needed an
+  explicit `height` (not just `max-height`) for this to render reliably;
+  the neutral canvas-grey background shows through as letterboxing on
+  photos that don't perfectly fill the box, rather than harsh black bars.
+- **Grid card thumbnails pushed from 4:3 to a full square (1:1).** These
+  intentionally still crop-to-fill (needed to keep the uniform grid look),
+  but a square box is a much closer match to how phones actually frame
+  photos than the previous short rectangle was, so meaningfully less gets
+  cropped away by default — without adding any new UI or asking sellers
+  to do anything.
+- **The manual crop-adjustment tool (letting a seller pick exactly what
+  shows) is a real, separate feature, deliberately not built this round** —
+  it's genuine new UI work, not a CSS tweak, and the two fixes above cover
+  the bulk of the actual problem on their own.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:
