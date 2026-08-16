@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { requireAdmin, requireAuth } = require('../middleware/auth');
 const { notifySavedSearches } = require('../services/alerts');
+const { sendNewMessageEmail } = require('../utils/messageNotify');
 const { geocodeCityState } = require('../utils/geocode');
 
 // Browse — summaries only. Contact info is never included here, at all, for anyone.
@@ -356,7 +357,7 @@ router.post('/:id/message', requireAuth, async (req, res) => {
     if (!body) return res.status(400).json({ error: 'Message cannot be empty.' });
     if (body.length > 2000) return res.status(400).json({ error: 'Message is too long.' });
 
-    const listingResult = await pool.query('SELECT id, posted_by FROM listings WHERE id = $1', [req.params.id]);
+    const listingResult = await pool.query('SELECT id, posted_by, title FROM listings WHERE id = $1', [req.params.id]);
     if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
     const listing = listingResult.rows[0];
 
@@ -380,6 +381,20 @@ router.post('/:id/message', requireAuth, async (req, res) => {
 
     await pool.query('INSERT INTO messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)', [conversationId, req.user.id, body]);
     res.json({ conversationId });
+
+    // Notify the seller by email, after responding — never let a slow or
+    // failed email hold up sending the actual message.
+    pool.query('SELECT name, email FROM users WHERE id = $1', [listing.posted_by])
+      .then(sellerResult => {
+        const seller = sellerResult.rows[0];
+        if (!seller) return;
+        return sendNewMessageEmail({
+          recipientEmail: seller.email, recipientName: seller.name,
+          senderName: req.user.name, listingTitle: listing.title,
+          messageBody: body, conversationId
+        });
+      })
+      .catch(err => console.error('New-message email failed:', err));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not send that message.' });

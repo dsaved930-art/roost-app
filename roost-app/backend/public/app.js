@@ -2066,11 +2066,27 @@ function handleResetTokenRedirect() {
   window.history.replaceState({}, '', url.toString());
 }
 
+// Clicking "Reply on Roost" in a new-message email lands here with
+// ?conversation=<id> — jumps straight into that thread instead of making
+// someone hunt for it in their inbox tab.
+function handleConversationRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const conversationId = params.get('conversation');
+  if (!conversationId) return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('conversation');
+  window.history.replaceState({}, '', url.toString());
+
+  const openIt = () => { switchView('messages'); openThread(conversationId); };
+  if (!currentUser) { openAuthModal('login', openIt); return; }
+  openIt();
+}
+
 renderChips();
 populateCategorySelect();
 renderPhotoGrid();
 routeFromLocation();
 loadRecentlySold();
-refreshCurrentUser().then(handleVerifyRedirect);
+refreshCurrentUser().then(() => { handleVerifyRedirect(); handleConversationRedirect(); });
 handleResetTokenRedirect();
 api('/stats/pageview', { method: 'POST' }).catch(() => {});

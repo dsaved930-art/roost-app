@@ -713,6 +713,48 @@ left for later.
   it's genuine new UI work, not a CSS tweak, and the two fixes above cover
   the bulk of the actual problem on their own.
 
+## New-message email notifications
+
+The single most important gap between "feels like a real, responsive
+marketplace" and "buyer messages, seller never notices, sale is lost."
+Uses the same SMTP setup already wired up for password reset and
+saved-search alerts — no new external service.
+
+- Fires from **both** places a message can be created: starting a new
+  conversation (`POST /api/listings/:id/message`) and replying within an
+  existing one (`POST /api/conversations/:id/messages`). Notifies
+  whichever party did *not* send the message — a buyer's first message
+  notifies the seller, a seller's reply notifies the buyer, and so on.
+  Tested both directions explicitly, not just one.
+- Always fires *after* responding to the sender, fire-and-forget — a slow
+  or failed email can never hold up or break sending the actual message.
+- **The email link deep-links straight into the specific conversation**
+  (`/?conversation=<id>`), not just "go check your Messages tab." A real
+  bug caught before shipping: the redirect handler checks `currentUser` to
+  decide whether to prompt sign-in first, but it was originally wired to
+  run before `refreshCurrentUser()` had resolved — meaning an
+  already-logged-in person clicking the link could have been wrongly
+  prompted to sign in again. Fixed by chaining it after that check
+  actually completes, the same pattern already used for the email
+  verification redirect.
+- **Message content is HTML-escaped before going into the email**, same
+  discipline as the JSON-LD fix from earlier — a message body containing
+  something like `</blockquote><script>...` is neutralized before it ever
+  reaches the email template, not just displayed safely on the site.
+- Message previews are truncated to 200 characters in the email — enough
+  to see what it's about, not the whole thing, both for a cleaner email
+  and as a reason to actually click through to the site.
+
+## Header alignment fix
+
+The logo drifted away from the left edge on wide screens — a leftover
+from the sidebar redesign. The header still had its old `max-width: 1080px`
+centered-container styling from before that redesign, while the browse
+page's own content grew to a wider, edge-to-edge layout — so on a wide
+screen, the two no longer lined up. Removed the header's width constraint
+entirely so it's flush against the edges again, consistent with the rest
+of the page.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

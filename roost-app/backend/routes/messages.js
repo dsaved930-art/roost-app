@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { sendNewMessageEmail } = require('../utils/messageNotify');
 
 // List all conversations the current user is part of (as buyer or seller),
 // newest activity first, with an unread count for the badge in the header.
@@ -131,6 +132,23 @@ router.post('/:id/messages', requireAuth, async (req, res) => {
       [req.params.id, req.user.id, body]
     );
     res.json({ message: inserted.rows[0] });
+
+    // Notify whichever side didn't send this reply — same fire-and-forget
+    // pattern as starting a conversation, never blocks the response.
+    const recipientId = conv.buyer_id === req.user.id ? conv.seller_id : conv.buyer_id;
+    Promise.all([
+      pool.query('SELECT name, email FROM users WHERE id = $1', [recipientId]),
+      pool.query('SELECT title FROM listings WHERE id = $1', [conv.listing_id])
+    ]).then(([recipientResult, listingResult]) => {
+      const recipient = recipientResult.rows[0];
+      const listing = listingResult.rows[0];
+      if (!recipient || !listing) return;
+      return sendNewMessageEmail({
+        recipientEmail: recipient.email, recipientName: recipient.name,
+        senderName: req.user.name, listingTitle: listing.title,
+        messageBody: body, conversationId: req.params.id
+      });
+    }).catch(err => console.error('New-message email failed:', err));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not send that message.' });
