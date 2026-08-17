@@ -500,12 +500,28 @@ document.getElementById('location-indicator').addEventListener('click', () => {
   document.getElementById('loc-search').value = activeLocation ? activeLocation.text : '';
   document.getElementById('loc-radius').value = activeLocation ? activeLocation.radius : '5';
   updateRadiusLabel();
+  updateRadiusLabel();
   document.getElementById('location-overlay').classList.add('show');
 });
 document.getElementById('location-close').addEventListener('click', () => document.getElementById('location-overlay').classList.remove('show'));
 document.getElementById('location-overlay').addEventListener('click', (e) => { if (e.target.id === 'location-overlay') document.getElementById('location-overlay').classList.remove('show'); });
-document.getElementById('loc-radius').addEventListener('change', updateRadiusLabel);
-function updateRadiusLabel() { document.getElementById('radius-label').textContent = document.getElementById('loc-radius').value + ' mi radius'; }
+document.getElementById('loc-radius').addEventListener('input', updateRadiusLabel);
+function updateRadiusLabel() {
+  const miles = Number(document.getElementById('loc-radius').value);
+  document.getElementById('loc-radius-value').textContent = miles + ' mi';
+  document.getElementById('radius-label').textContent = miles + ' mi radius';
+
+  // Scale the circle to actually reflect the selected radius, instead of
+  // staying a fixed decorative size regardless of what's selected. Uses a
+  // sqrt curve (not straight linear) so small distances — where most real
+  // usage concentrates — stay visually distinguishable from each other,
+  // rather than everything under ~20mi looking like the same tiny dot.
+  const MIN_MI = 1, MAX_MI = 100, MIN_PX = 20, MAX_PX = 82;
+  const t = Math.sqrt((miles - MIN_MI) / (MAX_MI - MIN_MI));
+  const px = MIN_PX + t * (MAX_PX - MIN_PX);
+  document.getElementById('radius-circle-fill').setAttribute('r', px);
+  document.getElementById('radius-circle-outline').setAttribute('r', px);
+}
 function setLocationIndicator() {
   const el = document.getElementById('location-indicator');
   const text = document.getElementById('location-indicator-text');

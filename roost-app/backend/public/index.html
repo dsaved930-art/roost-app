@@ -438,17 +438,14 @@
     <h2 style="font-size:20px;margin-bottom:16px;">Change location</h2>
     <input type="text" id="loc-search" placeholder="Search by city, state, or ZIP">
     <label class="fp-label" for="loc-radius">Radius</label>
-    <select id="loc-radius">
-      <option value="5">5 miles</option>
-      <option value="10">10 miles</option>
-      <option value="25">25 miles</option>
-      <option value="50">50 miles</option>
-      <option value="100">100 miles</option>
-    </select>
+    <div class="radius-slider-row">
+      <input type="range" id="loc-radius" min="1" max="100" step="1" value="5">
+      <span id="loc-radius-value">5 mi</span>
+    </div>
     <div class="radius-visual">
       <svg viewBox="0 0 220 180">
-        <circle cx="110" cy="95" r="70" fill="var(--fin)" opacity="0.14"/>
-        <circle cx="110" cy="95" r="70" fill="none" stroke="var(--fin)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <circle id="radius-circle-fill" cx="110" cy="95" r="20" fill="var(--fin)" opacity="0.14"/>
+        <circle id="radius-circle-outline" cx="110" cy="95" r="20" fill="none" stroke="var(--fin)" stroke-width="1.5" stroke-dasharray="4 4"/>
         <line x1="110" y1="25" x2="110" y2="165" stroke="var(--line)" stroke-width="1"/>
         <line x1="40" y1="95" x2="180" y2="95" stroke="var(--line)" stroke-width="1"/>
         <circle cx="110" cy="95" r="6" fill="var(--rust)"/>

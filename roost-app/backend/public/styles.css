@@ -89,6 +89,12 @@
   .loc-modal{max-width:420px;}
   .loc-modal input[type=text]{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:'Public Sans',sans-serif;margin-bottom:16px;}
   .loc-modal select{width:100%;padding:10px 34px 10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;background-color:#fff;color:var(--ink);font-family:'Public Sans',sans-serif;margin-bottom:20px;appearance:none;-webkit-appearance:none;-moz-appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2365676B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:14px;}
+  .radius-slider-row{display:flex;align-items:center;gap:14px;margin-bottom:18px;}
+  .radius-slider-row input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:999px;background:var(--line);outline:none;}
+  .radius-slider-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:var(--primary);cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25);}
+  .radius-slider-row input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:var(--primary);cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25);}
+  .radius-slider-row input[type=range]::-moz-range-track{height:4px;border-radius:999px;background:var(--line);}
+  #loc-radius-value{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:var(--ink);min-width:52px;text-align:right;flex:0 0 auto;}
   .radius-visual{background:var(--canvas);border-radius:10px;padding:30px 20px;display:flex;align-items:center;justify-content:center;margin-bottom:20px;}
   .radius-visual svg{width:100%;max-width:220px;height:auto;}
 

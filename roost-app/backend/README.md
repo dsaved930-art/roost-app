@@ -833,6 +833,28 @@ whatever text is sitting in that field either way. So the typing
 experience improved without changing, or risking, anything about how
 location search actually resolves coordinates underneath it.
 
+## Radius slider — actually responsive now, not stale
+
+The 5-option dropdown became a real slider (1-100 miles, matching the
+Facebook Marketplace reference), and the real bug behind "the map looks
+stale" is fixed: the circle graphic previously only had its *text label*
+change when you picked a different radius — the actual circle shape was
+hardcoded and never resized. Now it visually grows and shrinks live while
+dragging, using a sqrt-based scale (not straight linear) so smaller
+distances — where most real usage concentrates — stay visually
+distinguishable from each other instead of all looking like the same tiny
+dot. Everything stays in miles throughout, as asked. Zero backend changes
+needed — the distance-filtering logic already accepted any numeric
+radius, not just the 5 preset values, so the slider works with what was
+already there.
+
+**Worth flagging separately, not built this round:** whether "similar to
+Facebook Marketplace" also meant an actual live interactive map (real
+streets, real geography) rather than this stylized circle — that's a
+genuinely bigger, separate feature (Google's Maps *rendering* API, not
+the Places API already in use, with its own cost/quota profile) worth a
+deliberate decision rather than assuming either way.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:
