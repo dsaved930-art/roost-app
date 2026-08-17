@@ -817,6 +817,22 @@ actually plays out.
   would otherwise get hidden behind the sticky header or the post form's
   containers.
 
+## Autocomplete extended to "Change location" search too
+
+Same suggestions-as-you-type widget now also attached to the location
+filter's search field, confirmed live and working (real Google
+suggestions, correctly badged "powered by Google").
+
+Deliberately minimal, on purpose: this field already had its own working
+distance-search system (Census Bureau geocoding, triggered by the "Use
+this location" button). Rather than touch that working system, the
+autocomplete widget is attached with no custom selection-handling code at
+all — Google's widget already overwrites the input's text with whatever
+suggestion gets picked by default, and the existing button just reads
+whatever text is sitting in that field either way. So the typing
+experience improved without changing, or risking, anything about how
+location search actually resolves coordinates underneath it.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

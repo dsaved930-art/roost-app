@@ -2147,26 +2147,42 @@ function handleConversationRedirect() {
 function initCityAutocomplete() {
   const cityInput = document.getElementById('f-city');
   const stateInput = document.getElementById('f-state');
-  if (!cityInput || !window.google || !window.google.maps || !window.google.maps.places) return;
-
-  const autocomplete = new google.maps.places.Autocomplete(cityInput, {
-    types: ['(cities)'],
-    componentRestrictions: { country: 'us' },
-    fields: ['address_components']
-  });
-
-  autocomplete.addListener('place_changed', () => {
-    const place = autocomplete.getPlace();
-    if (!place || !place.address_components) return;
-    let city = '', state = '';
-    place.address_components.forEach(c => {
-      if (c.types.includes('locality')) city = c.long_name;
-      else if (!city && c.types.includes('sublocality')) city = c.long_name; // fallback for some smaller towns
-      if (c.types.includes('administrative_area_level_1')) state = c.short_name;
+  if (cityInput && window.google && window.google.maps && window.google.maps.places) {
+    const autocomplete = new google.maps.places.Autocomplete(cityInput, {
+      types: ['(cities)'],
+      componentRestrictions: { country: 'us' },
+      fields: ['address_components']
     });
-    if (city) { cityInput.value = city; clearFieldError('f-city'); }
-    if (state) { stateInput.value = state; clearFieldError('f-state'); }
-  });
+
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      if (!place || !place.address_components) return;
+      let city = '', state = '';
+      place.address_components.forEach(c => {
+        if (c.types.includes('locality')) city = c.long_name;
+        else if (!city && c.types.includes('sublocality')) city = c.long_name; // fallback for some smaller towns
+        if (c.types.includes('administrative_area_level_1')) state = c.short_name;
+      });
+      if (city) { cityInput.value = city; clearFieldError('f-city'); }
+      if (state) { stateInput.value = state; clearFieldError('f-state'); }
+    });
+  }
+
+  // "Change location" search — deliberately minimal. Google's widget
+  // already overwrites the input's text with the selected suggestion by
+  // default, and the existing "Use this location" button just reads
+  // whatever text is in this field and geocodes it via the Census Bureau
+  // — so attaching the widget is genuinely all that's needed here. No
+  // other code changes, nothing about the existing distance-search flow
+  // is touched.
+  const locInput = document.getElementById('loc-search');
+  if (locInput && window.google && window.google.maps && window.google.maps.places) {
+    new google.maps.places.Autocomplete(locInput, {
+      types: ['(cities)'],
+      componentRestrictions: { country: 'us' },
+      fields: ['address_components'] // no place_changed listener needed — default text-fill behavior is enough
+    });
+  }
 }
 
 async function setupGooglePlacesIfConfigured() {
