@@ -855,6 +855,33 @@ genuinely bigger, separate feature (Google's Maps *rendering* API, not
 the Places API already in use, with its own cost/quota profile) worth a
 deliberate decision rather than assuming either way.
 
+## Real regression from the autocomplete rollout, found and fixed
+
+Reported as "0 listings even at 99mi from Lodi" despite real nearby
+listings existing — this was a genuine bug I introduced adding
+autocomplete to the location search field, not a pre-existing issue.
+
+**Root cause:** Google's autocomplete widget fills the field as
+`"Lodi, CA, USA"` — three comma-separated parts — but the geocoding
+endpoint's parser was written assuming exactly two (`"City, State"`) and
+took the *last* comma-separated piece as the state. That meant it was
+sending `state="USA"` instead of `state="CA"`, which obviously can't
+geocode — and the fallback text-matching path was equally broken, since
+it does an exact substring match against the *whole* search string,
+which no listing's plain `"Lodi, CA"` city/state text could ever contain
+`", USA"` to match against.
+
+**Fix:** strip a trailing `", USA"` / `", United States"` right at the
+source — in the click handler, before the text flows into either the
+geocoding call or the text-matching fallback — rather than patching each
+downstream consumer separately. Also hardened the same stripping
+server-side in the `/api/geocode` endpoint itself, independent of
+whatever the frontend sends, consistent with how validation is handled
+in two layers everywhere else in this app. Tested against Google's
+actual output format, plain manually-typed input, "United States"
+spelled out, a bare ZIP code, and a city with no state at all — all
+parse correctly now.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

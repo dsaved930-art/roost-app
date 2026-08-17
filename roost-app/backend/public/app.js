@@ -529,7 +529,10 @@ function setLocationIndicator() {
   else { text.textContent = 'Choose a location'; el.classList.add('unset'); }
 }
 document.getElementById('apply-location').addEventListener('click', async () => {
-  const text = document.getElementById('loc-search').value.trim();
+  // Google's autocomplete fills this field as "City, State, USA" — strip
+  // the trailing country so downstream geocoding and text-matching both
+  // keep working exactly as they did with plain "City, State" input.
+  const text = document.getElementById('loc-search').value.trim().replace(/,\s*(USA|United States)$/i, '').trim();
   const radius = document.getElementById('loc-radius').value;
   const applyBtn = document.getElementById('apply-location');
 

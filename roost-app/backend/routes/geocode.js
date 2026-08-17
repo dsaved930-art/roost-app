@@ -7,7 +7,7 @@ const { geocodeCityState } = require('../utils/geocode');
 // issues and keeps this centralized in one place).
 router.get('/', async (req, res) => {
   try {
-    const q = String(req.query.q || '').trim();
+    const q = String(req.query.q || '').trim().replace(/,\s*(USA|United States)$/i, '').trim();
     if (!q) return res.status(400).json({ error: 'Missing location query.' });
 
     // Accept "City, State" or "City State" — split on the last comma if present.
