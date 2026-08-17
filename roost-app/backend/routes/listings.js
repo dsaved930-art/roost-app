@@ -198,6 +198,16 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.json({ id: newListing.id });
 
+    // Remember the seller's phone number on their profile for next time —
+    // pure convenience, so the contact field can pre-fill on future posts.
+    // Deliberately never does this for email, since that's tied to login
+    // identity and shouldn't be silently overwritten by whatever someone
+    // types into a listing's contact field.
+    if (b.contactMethod === 'Phone' && b.contactValue) {
+      pool.query('UPDATE users SET phone = $1 WHERE id = $2', [b.contactValue, req.user.id])
+        .catch(err => console.error('Could not save phone to profile:', err));
+    }
+
     // Fire after responding — a slow saved-search match/email round shouldn't
     // make the person who just posted wait for it.
     notifySavedSearches(newListing).catch(err => console.error('notifySavedSearches error:', err));
@@ -279,6 +289,11 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 
     res.json({ id: listing.id });
+
+    if (b.contactMethod === 'Phone' && b.contactValue) {
+      pool.query('UPDATE users SET phone = $1 WHERE id = $2', [b.contactValue, req.user.id])
+        .catch(err => console.error('Could not save phone to profile:', err));
+    }
 
     // Best-effort re-geocode, same as on creation — city/state may have changed.
     geocodeCityState(listing.city, listing.state)

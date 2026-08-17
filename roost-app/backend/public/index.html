@@ -174,7 +174,7 @@
 
     <div class="row2">
       <div class="field">
-        <label for="f-age">Age</label>
+        <label for="f-age">Age (optional)</label>
         <input type="text" id="f-age" placeholder="1 year">
       </div>
       <div class="field">
@@ -189,17 +189,17 @@
 
     <div class="row2">
       <div class="field">
-        <label for="f-dna-sexed">DNA sexed?</label>
+        <label for="f-dna-sexed">DNA sexed? (optional)</label>
         <select id="f-dna-sexed">
-          <option value="unknown">? Not sure</option>
+          <option value="unknown">Not Sure?</option>
           <option value="yes">Yes</option>
           <option value="no">No</option>
         </select>
       </div>
       <div class="field">
-        <label for="f-hand-tame">Hand-tame?</label>
+        <label for="f-hand-tame">Hand-tame? (optional)</label>
         <select id="f-hand-tame">
-          <option value="unknown">? Not sure</option>
+          <option value="unknown">Not Sure?</option>
           <option value="yes">Yes</option>
           <option value="no">No</option>
         </select>
@@ -208,7 +208,10 @@
 
     <div class="field">
       <label for="f-price">Price <span class="required-asterisk">*</span></label>
-      <input type="number" id="f-price" placeholder="150" min="0">
+      <div class="price-input-wrap">
+        <span class="price-prefix">$</span>
+        <input type="number" id="f-price" placeholder="150" min="0">
+      </div>
       <div class="free-toggle">
         <input type="checkbox" id="f-free">
         <label for="f-free" style="margin:0;font-weight:400;">This bird is free to a good home</label>
@@ -235,7 +238,7 @@
     </div>
 
     <div class="field">
-      <label>Photos (up to 5)</label>
+      <label>Photos (up to 5, optional)</label>
       <div class="photo-grid" id="photo-grid"></div>
       <input type="file" id="f-photo-file" accept="image/*" multiple style="display:none;">
       <div class="hint">First photo is used as the cover image shown on listing cards.</div>

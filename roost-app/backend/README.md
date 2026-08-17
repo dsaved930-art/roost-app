@@ -755,6 +755,68 @@ screen, the two no longer lined up. Removed the header's width constraint
 entirely so it's flush against the edges again, consistent with the rest
 of the page.
 
+## City/state autocomplete (optional — requires your own Google API key)
+
+As you type a city on the post form, real address suggestions appear
+(Google Places), and selecting one fills in both city and state
+automatically. **Entirely optional and off by default** — if no API key
+is configured, the fields just work as plain text entry, exactly like
+before. Nothing else about the app depends on this.
+
+### Setup (you'll need to do this part yourself — I can't create Google
+### accounts or API keys on your behalf)
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/), create
+   a project if you don't have one already.
+2. Enable two APIs: **"Maps JavaScript API"** and **"Places API"** (the
+   widget needs both).
+3. Enable billing on the project — Google requires this even to use the
+   free tier, but see step 5 below for a real safety net, not just trust.
+4. Create an API key (APIs & Services → Credentials → Create Credentials
+   → API Key).
+5. **Restrict the key — this step matters, don't skip it:**
+   - Application restriction → HTTP referrers → add
+     `https://roostmarketplace.com/*`
+   - API restriction → limit it to just the two APIs from step 2
+   - Then go to IAM & Admin → Quotas, find the Maps JavaScript/Places
+     quotas, and set a hard cap comfortably below the free monthly tier.
+     This is the real safety net: if usage ever unexpectedly spiked, the
+     feature would simply stop suggesting addresses (falling back to
+     plain typing) rather than silently charge your card.
+6. Add the key as an environment variable in DigitalOcean:
+   `GOOGLE_PLACES_API_KEY` = your key. Redeploy.
+
+### How the cost actually works, if you're wondering whether to bother
+
+The autocomplete typing itself is free when a "session" completes
+normally (someone types, then clicks a suggestion) — Google only bills
+when that session terminates with a details lookup. The realistic risk
+is a session that gets abandoned (someone types but never selects
+anything), which can revert to per-keystroke billing. At Roost's current
+traffic this is very unlikely to ever generate a real charge — the free
+tier is sized for thousands of monthly lookups — but the quota cap in
+step 5 exists specifically so that stays true regardless of how usage
+actually plays out.
+
+### Implementation notes
+
+- Backend: a new `GET /api/config` endpoint serves the key to the
+  frontend. This is normal and expected for this kind of key — the key is
+  fundamentally client-side/embedded in the browser, so it's secured by
+  the domain + API restrictions above, not by hiding it.
+- Frontend: only loads Google's script at all if a key is configured,
+  and only wires up the widget once that script finishes loading — a
+  missing or slow-to-load key degrades gracefully to plain text, never
+  breaks the form.
+- Address parsing was tested against realistic response shapes, including
+  smaller towns that only return a `sublocality` rather than a
+  `locality`, and a malformed/missing-state response — neither crashes or
+  leaves the fields in a broken state.
+- Added a CSS override for Google's autocomplete dropdown — it renders
+  outside the app's normal layout with its own default z-index, which
+  would otherwise get hidden behind the sticky header or the post form's
+  containers.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

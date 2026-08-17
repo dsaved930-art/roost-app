@@ -89,7 +89,7 @@ router.get('/me', async (req, res) => {
   if (!req.user) return res.json({ user: null });
   try {
     const result = await pool.query(
-      `SELECT name, email, role, email_verified AS "emailVerified", verification_status AS "verificationStatus",
+      `SELECT name, email, phone, role, email_verified AS "emailVerified", verification_status AS "verificationStatus",
               verification_note AS "verificationNote"
        FROM users WHERE id = $1`,
       [req.user.id]

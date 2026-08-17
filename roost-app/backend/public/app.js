@@ -613,9 +613,11 @@ document.getElementById('f-contact-method').addEventListener('change', (e) => {
   if (e.target.value === 'Phone') {
     valueField.placeholder = '(555) 555-0100';
     valueField.type = 'tel';
+    valueField.value = currentUser && currentUser.phone ? formatPhoneDisplay(currentUser.phone) : '';
   } else {
     valueField.placeholder = 'you@email.com';
     valueField.type = 'text';
+    valueField.value = currentUser && currentUser.email ? currentUser.email : '';
   }
 });
 
@@ -728,10 +730,44 @@ document.getElementById('f-photo-file').addEventListener('change', async (e) => 
   renderPhotoGrid();
 });
 
+// ===================== POST FORM FIELD-LEVEL VALIDATION =====================
+function setFieldError(fieldId, message) {
+  const input = document.getElementById(fieldId);
+  const wrapper = input.closest('.field');
+  if (!wrapper) return;
+  wrapper.classList.add('field-invalid');
+  let msgEl = wrapper.querySelector('.field-error-msg');
+  if (!msgEl) {
+    msgEl = document.createElement('div');
+    msgEl.className = 'field-error-msg';
+    wrapper.appendChild(msgEl);
+  }
+  msgEl.textContent = message;
+}
+function clearFieldError(fieldId) {
+  const input = document.getElementById(fieldId);
+  const wrapper = input.closest('.field');
+  if (!wrapper) return;
+  wrapper.classList.remove('field-invalid');
+  const msgEl = wrapper.querySelector('.field-error-msg');
+  if (msgEl) msgEl.remove();
+}
+function clearAllPostFormErrors() {
+  document.querySelectorAll('#post-form-wrap .field-invalid').forEach(el => el.classList.remove('field-invalid'));
+  document.querySelectorAll('#post-form-wrap .field-error-msg').forEach(el => el.remove());
+}
+['f-title', 'f-category', 'f-price', 'f-free', 'f-city', 'f-state', 'f-desc',
+ 'f-contact-method', 'f-contact-value', 'f-permit', 'f-attest', 'f-agree-terms'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', () => clearFieldError(id));
+  if (el) el.addEventListener('change', () => clearFieldError(id));
+});
+
 // ===================== POST A LISTING =====================
 document.getElementById('submit-listing').addEventListener('click', async () => {
   const errEl = document.getElementById('post-error');
   errEl.textContent = '';
+  clearAllPostFormErrors();
 
   if (!currentUser) {
     errEl.textContent = 'Please sign in first.';
@@ -765,17 +801,34 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
     photos: pendingPhotos
   };
 
-  if (!body.title || !body.category || !body.city || !body.state || !body.description || !body.contactValue) {
-    errEl.textContent = 'Please fill in title, category, city, state, description, and contact details.';
+  const problems = [];
+  if (!body.title) problems.push({ fieldId: 'f-title', message: 'Please enter a listing title.' });
+  if (!body.category) problems.push({ fieldId: 'f-category', message: 'Please choose a category.' });
+  if (!body.free && (!body.price || Number(body.price) < 0)) {
+    problems.push({ fieldId: 'f-price', message: 'Enter a price, or check "free to a good home" below.' });
+  }
+  if (!body.city) problems.push({ fieldId: 'f-city', message: 'Please enter a city.' });
+  if (!body.state) problems.push({ fieldId: 'f-state', message: 'Please enter a state.' });
+  if (!body.description) problems.push({ fieldId: 'f-desc', message: 'Please add a description.' });
+  if (!body.contactValue) problems.push({ fieldId: 'f-contact-value', message: 'Please enter how buyers can reach you.' });
+  if (body.category === 'RAP' && !body.permitNumber) {
+    problems.push({ fieldId: 'f-permit', message: 'A falconry/raptor permit number is required to list a bird of prey.' });
+  }
+  if (!isEditing && !body.attested) {
+    problems.push({ fieldId: 'f-attest', message: 'Please confirm the captive-bred and ownership attestation.' });
+  }
+  if (!isEditing && !body.agreedTerms) {
+    problems.push({ fieldId: 'f-agree-terms', message: 'Please confirm you\'re 18+ and agree to the Terms and Privacy Policy.' });
+  }
+
+  if (problems.length > 0) {
+    problems.forEach(p => setFieldError(p.fieldId, p.message));
+    const fieldWord = problems.length === 1 ? 'field' : 'fields';
+    errEl.textContent = `Please fix the highlighted ${fieldWord} below (${problems.length}).`;
+    document.getElementById(problems[0].fieldId).closest('.field').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById(problems[0].fieldId).focus();
     return;
   }
-  if (!body.free && (!body.price || Number(body.price) < 0)) { errEl.textContent = 'Enter a price, or check "free to a good home".'; return; }
-  // Attestation/Terms were already confirmed when the listing was first created —
-  // re-requiring them on every typo fix would just be friction, and the
-  // backend doesn't require them for edits either.
-  if (!isEditing && !body.attested) { errEl.textContent = 'Please confirm the captive-bred and ownership attestation before publishing.'; return; }
-  if (!isEditing && !body.agreedTerms) { errEl.textContent = 'Please confirm you are 18+ and agree to the Terms of Service and Privacy Policy.'; return; }
-  if (body.category === 'RAP' && !body.permitNumber) { errEl.textContent = 'A falconry/raptor permit number is required to list a bird of prey.'; return; }
 
   const submitBtn = document.getElementById('submit-listing');
   submitBtn.disabled = true;
@@ -803,6 +856,7 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
 });
 
 function resetPostForm() {
+  clearAllPostFormErrors();
   document.querySelectorAll('#post-form-wrap input[type=text], #post-form-wrap input[type=tel], #post-form-wrap input[type=number], #post-form-wrap textarea').forEach(el => el.value = '');
   document.getElementById('f-sex').value = '';
   document.getElementById('f-dna-sexed').value = 'unknown';
@@ -1572,6 +1626,7 @@ async function updateListingStatus(id, status) {
 // everything. Attestation checkboxes are deliberately left unchecked —
 // re-confirming them each time is the point, not a formality to skip.
 async function duplicateListing(id) {
+  clearAllPostFormErrors();
   switchView('post');
   showToast('Loading listing details to duplicate…');
   editingListingId = null;
@@ -1618,6 +1673,7 @@ async function duplicateListing(id) {
 }
 
 async function editListing(id) {
+  clearAllPostFormErrors();
   switchView('post');
   showToast('Loading your listing…');
   try {
@@ -2082,6 +2138,51 @@ function handleConversationRedirect() {
   openIt();
 }
 
+// ===================== CITY/STATE AUTOCOMPLETE (optional) =====================
+// Only activates if a GOOGLE_PLACES_API_KEY is configured server-side —
+// otherwise f-city/f-state just work as plain text fields, same as always.
+// The widget itself manages Places "session tokens" automatically, which is
+// what keeps this free for the common case (someone types, then picks a
+// suggestion) — see the README for the real cost breakdown.
+function initCityAutocomplete() {
+  const cityInput = document.getElementById('f-city');
+  const stateInput = document.getElementById('f-state');
+  if (!cityInput || !window.google || !window.google.maps || !window.google.maps.places) return;
+
+  const autocomplete = new google.maps.places.Autocomplete(cityInput, {
+    types: ['(cities)'],
+    componentRestrictions: { country: 'us' },
+    fields: ['address_components']
+  });
+
+  autocomplete.addListener('place_changed', () => {
+    const place = autocomplete.getPlace();
+    if (!place || !place.address_components) return;
+    let city = '', state = '';
+    place.address_components.forEach(c => {
+      if (c.types.includes('locality')) city = c.long_name;
+      else if (!city && c.types.includes('sublocality')) city = c.long_name; // fallback for some smaller towns
+      if (c.types.includes('administrative_area_level_1')) state = c.short_name;
+    });
+    if (city) { cityInput.value = city; clearFieldError('f-city'); }
+    if (state) { stateInput.value = state; clearFieldError('f-state'); }
+  });
+}
+
+async function setupGooglePlacesIfConfigured() {
+  try {
+    const config = await api('/config');
+    if (!config.googlePlacesApiKey) return; // not configured — plain text fields, no error, no fuss
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.googlePlacesApiKey)}&libraries=places&callback=initCityAutocomplete`;
+    script.async = true;
+    window.initCityAutocomplete = initCityAutocomplete;
+    document.head.appendChild(script);
+  } catch (e) {
+    console.error('Could not load address autocomplete:', e); // non-fatal — form still works without it
+  }
+}
+
 renderChips();
 populateCategorySelect();
 renderPhotoGrid();
@@ -2089,4 +2190,5 @@ routeFromLocation();
 loadRecentlySold();
 refreshCurrentUser().then(() => { handleVerifyRedirect(); handleConversationRedirect(); });
 handleResetTokenRedirect();
+setupGooglePlacesIfConfigured();
 api('/stats/pageview', { method: 'POST' }).catch(() => {});

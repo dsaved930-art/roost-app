@@ -145,6 +145,12 @@
   .post-view h2{font-size:28px;margin-bottom:6px;}
   .post-view > p{color:var(--muted);font-size:14px;margin-bottom:28px;}
   .field{margin-bottom:18px;}
+  .field.field-invalid input, .field.field-invalid select, .field.field-invalid textarea{border-color:var(--rust) !important;background:#FDF4F2;}
+  .field.field-invalid .checkbox-field{border-color:var(--rust) !important;background:#FDF4F2;}
+  .field-error-msg{color:var(--rust-dark);font-size:12px;margin-top:5px;font-weight:500;}
+  .price-input-wrap{position:relative;}
+  .price-input-wrap .price-prefix{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none;}
+  .price-input-wrap input{padding-left:26px;}
   .field label{display:block;font-size:13px;font-weight:500;margin-bottom:6px;}
   .field .hint{font-size:12px;color:var(--muted);font-weight:400;margin-top:4px;}
   .field input[type=text],.field input[type=number],.field input[type=email],.field input[type=tel],.field textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:'Public Sans',sans-serif;font-size:14px;background:#fff;}
@@ -158,11 +164,11 @@
   .species-list-box{background:#FBEFE7;border:1px solid var(--rust);border-radius:8px;padding:14px 16px;}
 
   .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;max-width:420px;}
-  .photo-slot{position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--canvas);}
+  .photo-slot{position:relative;aspect-ratio:1/1;max-width:140px;border-radius:10px;overflow:hidden;background:var(--canvas);}
   .photo-slot img{width:100%;height:100%;object-fit:cover;display:block;}
   .photo-slot .cover-tag{position:absolute;bottom:5px;left:5px;background:rgba(20,20,20,0.65);color:#fff;font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:0.4px;padding:2px 6px;border-radius:999px;}
   .photo-slot .remove-photo-btn{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(20,20,20,0.65);color:#fff;border:none;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;}
-  .photo-add-slot{aspect-ratio:1/1;border-radius:10px;border:2px dashed var(--line);background:var(--canvas);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;color:var(--muted);}
+  .photo-add-slot{aspect-ratio:1/1;max-width:140px;border-radius:10px;border:2px dashed var(--line);background:var(--canvas);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;color:var(--muted);}
   .photo-add-slot:hover{border-color:var(--primary);background:#EAF2FC;}
   .photo-add-slot svg{width:22px;height:22px;}
   .photo-add-slot span{font-size:11px;}
@@ -407,3 +413,8 @@
 .trait-row{padding:4px 0;font-size:14px;}
 .trait-label{font-weight:600;color:var(--ink);}
 .trait-value{color:var(--muted);}
+
+/* Google Places Autocomplete's dropdown is injected outside our normal DOM
+   flow with its own default z-index — without this override it can render
+   behind the sticky header (z-index:60) or the post form's containers. */
+.pac-container{z-index:200 !important;font-family:'Public Sans',sans-serif !important;}

@@ -19,6 +19,15 @@ app.use('/api/verification', require('./routes/verification'));
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/geocode', require('./routes/geocode'));
 
+// A Google Maps/Places browser API key is meant to be public — real
+// security comes from restricting it (by domain and by which APIs it can
+// call) in Google Cloud Console, not from hiding it. Returns null if it
+// isn't configured, so the frontend can gracefully fall back to plain
+// text entry rather than break.
+app.get('/api/config', (req, res) => {
+  res.json({ googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY || null });
+});
+
 // SEO: real, crawlable, individually-addressable pages for each listing —
 // this is what lets Google (and link previews on social/messaging apps)
 // actually index and show real content instead of a blank JS shell.

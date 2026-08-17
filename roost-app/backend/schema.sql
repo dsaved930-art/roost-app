@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   role                        TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
   auto_created                BOOLEAN NOT NULL DEFAULT FALSE,
   email_verified              BOOLEAN NOT NULL DEFAULT FALSE,
+  phone                        TEXT,
   verification_status         TEXT NOT NULL DEFAULT 'none' CHECK (verification_status IN ('none', 'pending', 'verified', 'rejected')),
   verification_business_name  TEXT,
   verification_phone          TEXT,
@@ -163,6 +164,7 @@ CREATE INDEX IF NOT EXISTS idx_saved_search_matches_search ON saved_search_match
 -- verification was added) still picks up the new columns. On a brand-new
 -- database these are no-ops since CREATE TABLE above already includes them.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'none';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_business_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_phone TEXT;
