@@ -2187,19 +2187,21 @@ function initCityAutocomplete() {
     });
   }
 
-  // "Change location" search — deliberately minimal. Google's widget
-  // already overwrites the input's text with the selected suggestion by
-  // default, and the existing "Use this location" button just reads
-  // whatever text is in this field and geocodes it via the Census Bureau
-  // — so attaching the widget is genuinely all that's needed here. No
-  // other code changes, nothing about the existing distance-search flow
-  // is touched.
+  // "Change location" search. Google's widget fills the field with the
+  // full formatted description by default, including the country
+  // ("Lodi, CA, USA") — redundant noise since Roost is US-only right now,
+  // so this listener just tidies the displayed text after selection. The
+  // underlying value used for geocoding is already cleaned separately
+  // (see the apply-location handler), so this is purely cosmetic.
   const locInput = document.getElementById('loc-search');
   if (locInput && window.google && window.google.maps && window.google.maps.places) {
-    new google.maps.places.Autocomplete(locInput, {
+    const locAutocomplete = new google.maps.places.Autocomplete(locInput, {
       types: ['(cities)'],
       componentRestrictions: { country: 'us' },
-      fields: ['address_components'] // no place_changed listener needed — default text-fill behavior is enough
+      fields: ['address_components']
+    });
+    locAutocomplete.addListener('place_changed', () => {
+      locInput.value = locInput.value.trim().replace(/,\s*(USA|United States)$/i, '').trim();
     });
   }
 }

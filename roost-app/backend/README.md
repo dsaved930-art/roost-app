@@ -882,6 +882,21 @@ actual output format, plain manually-typed input, "United States"
 spelled out, a bare ZIP code, and a city with no state at all — all
 parse correctly now.
 
+## "USA" stripped from what's displayed too, not just parsed internally
+
+Clicking a Google suggestion in "Change location" used to leave
+`"Lodi, CA, USA"` sitting in the search box after selection — technically
+working (the underlying regression from the previous fix was already
+resolved), but visually redundant noise since Roost is US-only right now.
+Added a listener that tidies the displayed text immediately after
+selection, purely cosmetic — the actual geocoding/matching logic was
+already cleaned separately and is untouched here.
+
+Worth noting for later: if Roost ever expands outside the US, this is the
+one spot that would need revisiting — right now it's a deliberate,
+reasonable simplification for where the app actually is today, not an
+oversight.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:
