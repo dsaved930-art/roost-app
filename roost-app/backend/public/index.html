@@ -363,6 +363,17 @@
     <div class="stats-sub">Live counts from this prototype's own data — not a replacement for real analytics.</div>
     <div id="stats-body">Loading…</div>
     <div class="stats-note">These are real counts from your database. For deeper analytics (visitor sources, funnels, session replay) you'll still want a dedicated tool like Google Analytics, Plausible, or PostHog alongside this.</div>
+
+    <div class="stats-section-title">Backfill missing coordinates</div>
+    <div class="stats-sub" style="margin-bottom:12px;">
+      Listings created before real geocoding was added — or from a period
+      when it was quietly broken — may have no saved coordinates, meaning
+      distance search can't find them. This re-geocodes every listing
+      missing them, using your own browser's Google Maps connection.
+      Safe to run more than once — already-geocoded listings are skipped.
+    </div>
+    <button class="secondary" id="backfill-coords-btn" style="width:100%;">Find and fix listings missing coordinates</button>
+    <div id="backfill-status" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
   </div>
 </div>
 

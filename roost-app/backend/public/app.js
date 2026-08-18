@@ -546,13 +546,15 @@ document.getElementById('apply-location').addEventListener('click', async () => 
 
   applyBtn.disabled = true;
   applyBtn.textContent = 'Finding location…';
-  let coords = null;
-  try {
-    coords = await api('/geocode?q=' + encodeURIComponent(text));
-  } catch (e) {
-    // No match found, or the geocoder had trouble — fall back to matching
-    // by city/state text below rather than failing the filter entirely.
-    coords = null;
+  let coords = getVerifiedCoords(selectedLocCoords, selectedLocCoordsText, 'loc-search'); // real, precise coords from the Places selection — skip Census entirely when we have these
+  if (!coords) {
+    try {
+      coords = await api('/geocode?q=' + encodeURIComponent(text));
+    } catch (e) {
+      // No match found, or the geocoder had trouble — fall back to matching
+      // by city/state text below rather than failing the filter entirely.
+      coords = null;
+    }
   }
   applyBtn.disabled = false;
   applyBtn.textContent = 'Use this location';
@@ -817,6 +819,8 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
     attested: document.getElementById('f-attest').checked,
     agreedTerms: document.getElementById('f-agree-terms').checked,
     permitNumber: document.getElementById('f-permit').value.trim(),
+    lat: (() => { const c = getVerifiedCoords(selectedCityCoords, selectedCityCoordsText, 'f-city'); return c ? c.lat : null; })(),
+    lon: (() => { const c = getVerifiedCoords(selectedCityCoords, selectedCityCoordsText, 'f-city'); return c ? c.lon : null; })(),
     photos: pendingPhotos
   };
 
@@ -876,6 +880,8 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
 
 function resetPostForm() {
   clearAllPostFormErrors();
+  selectedCityCoords = null;
+  selectedCityCoordsText = null;
   document.querySelectorAll('#post-form-wrap input[type=text], #post-form-wrap input[type=tel], #post-form-wrap input[type=number], #post-form-wrap textarea').forEach(el => el.value = '');
   document.getElementById('f-sex').value = '';
   document.getElementById('f-dna-sexed').value = 'unknown';
@@ -1234,6 +1240,72 @@ async function openStats() {
   }
 }
 document.getElementById('footer-stats').addEventListener('click', (e) => { e.preventDefault(); openStats(); });
+
+// Admin coordinate-backfill tool. Runs entirely in the browser — the
+// Google key is domain-restricted, which only real browser requests
+// satisfy, not a server-to-server call. Throttled between requests to be
+// a reasonable citizen of the API rather than firing everything at once.
+document.getElementById('backfill-coords-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('backfill-coords-btn');
+  const statusEl = document.getElementById('backfill-status');
+  btn.disabled = true;
+
+  if (!window.google || !window.google.maps || !window.google.maps.Geocoder) {
+    statusEl.textContent = 'Google Maps isn\'t loaded — check that the Geocoding API is enabled and added to your key\'s restrictions.';
+    btn.disabled = false;
+    return;
+  }
+
+  let listings;
+  try {
+    const data = await api('/listings/admin/missing-coords');
+    listings = data.listings || [];
+  } catch (e) {
+    statusEl.textContent = 'Could not load the list of listings needing coordinates.';
+    btn.disabled = false;
+    return;
+  }
+
+  if (listings.length === 0) {
+    statusEl.textContent = 'Nothing to do — every listing already has coordinates.';
+    btn.disabled = false;
+    return;
+  }
+
+  const geocoder = new google.maps.Geocoder();
+  let fixed = 0, failed = 0;
+
+  for (let i = 0; i < listings.length; i++) {
+    const l = listings[i];
+    statusEl.textContent = `Processing ${i + 1} of ${listings.length}… (${fixed} fixed, ${failed} failed so far)`;
+    try {
+      const result = await new Promise((resolve, reject) => {
+        geocoder.geocode(
+          { address: `${l.city}, ${l.state}`, componentRestrictions: { country: 'US' } },
+          (results, status) => {
+            if (status === 'OK' && results && results[0]) resolve(results[0]);
+            else reject(new Error(status));
+          }
+        );
+      });
+      const loc = result.geometry.location;
+      await api('/listings/' + l.id + '/coordinates', {
+        method: 'PATCH',
+        body: JSON.stringify({ lat: loc.lat(), lon: loc.lng() })
+      });
+      fixed++;
+    } catch (e) {
+      console.error('Could not geocode listing', l.id, `"${l.city}, ${l.state}"`, '-', e.message);
+      failed++;
+    }
+    await new Promise(r => setTimeout(r, 250)); // throttle — don't hammer the API in a tight loop
+  }
+
+  statusEl.textContent = `Done — fixed ${fixed} of ${listings.length}.` +
+    (failed > 0 ? ` ${failed} couldn't be resolved automatically (unusual city/state text — may need a manual look).` : '');
+  btn.disabled = false;
+});
+
 document.getElementById('stats-close').addEventListener('click', () => document.getElementById('stats-overlay').classList.remove('show'));
 document.getElementById('stats-overlay').addEventListener('click', (e) => { if (e.target.id === 'stats-overlay') document.getElementById('stats-overlay').classList.remove('show'); });
 
@@ -1646,6 +1718,8 @@ async function updateListingStatus(id, status) {
 // re-confirming them each time is the point, not a formality to skip.
 async function duplicateListing(id) {
   clearAllPostFormErrors();
+  selectedCityCoords = null;
+  selectedCityCoordsText = null;
   switchView('post');
   showToast('Loading listing details to duplicate…');
   editingListingId = null;
@@ -1693,6 +1767,8 @@ async function duplicateListing(id) {
 
 async function editListing(id) {
   clearAllPostFormErrors();
+  selectedCityCoords = null;
+  selectedCityCoordsText = null;
   switchView('post');
   showToast('Loading your listing…');
   try {
@@ -2159,10 +2235,40 @@ function handleConversationRedirect() {
 
 // ===================== CITY/STATE AUTOCOMPLETE (optional) =====================
 // Only activates if a GOOGLE_PLACES_API_KEY is configured server-side —
-// otherwise f-city/f-state just work as plain text fields, same as always.
-// The widget itself manages Places "session tokens" automatically, which is
-// what keeps this free for the common case (someone types, then picks a
-// suggestion) — see the README for the real cost breakdown.
+// otherwise these fields just work as plain text, same as always.
+//
+// Both widgets now also capture real coordinates directly from Google's
+// response, not just the text. This exists because of a real limitation
+// discovered the hard way: the free Census geocoder used elsewhere in this
+// app is built for full street addresses (Census's own docs: "the building
+// number and street name are required... city name, state, and ZIP code
+// are optional") — a bare "Lodi, CA" query can fail to resolve through it
+// even though it's a perfectly real city. Google's Places response already
+// includes precise coordinates for whatever was actually selected, at no
+// extra cost (same session, just requesting one more field) — so that's
+// used as the primary source now, with Census kept only as a fallback for
+// anyone who types a location without picking a suggestion.
+let selectedCityCoords = null;
+let selectedCityCoordsText = null; // exact field text at the moment coords were captured
+let selectedLocCoords = null;
+let selectedLocCoordsText = null;
+
+// Returns the captured coordinates only if the field's current text still
+// matches what was there when they were captured — if the seller edited
+// the text afterward, this returns null, which correctly falls back to
+// server-side geocoding instead of attaching a stale/wrong point. This
+// deliberately does NOT rely on a plain "input" event listener to clear
+// stale state: a real bug was found here — Google's autocomplete widget
+// appears to fire its own synthetic input event as part of programmatically
+// filling in a selection, which raced against and silently wiped out the
+// very coordinates just captured by place_changed. Comparing text at the
+// point of use sidesteps that event-ordering problem entirely.
+function getVerifiedCoords(coords, capturedText, currentInputId) {
+  if (!coords) return null;
+  const currentText = document.getElementById(currentInputId).value.trim();
+  return currentText === capturedText ? coords : null;
+}
+
 function initCityAutocomplete() {
   const cityInput = document.getElementById('f-city');
   const stateInput = document.getElementById('f-state');
@@ -2170,7 +2276,7 @@ function initCityAutocomplete() {
     const autocomplete = new google.maps.places.Autocomplete(cityInput, {
       types: ['(cities)'],
       componentRestrictions: { country: 'us' },
-      fields: ['address_components']
+      fields: ['address_components', 'geometry']
     });
 
     autocomplete.addListener('place_changed', () => {
@@ -2184,24 +2290,28 @@ function initCityAutocomplete() {
       });
       if (city) { cityInput.value = city; clearFieldError('f-city'); }
       if (state) { stateInput.value = state; clearFieldError('f-state'); }
+      selectedCityCoords = (place.geometry && place.geometry.location)
+        ? { lat: place.geometry.location.lat(), lon: place.geometry.location.lng() }
+        : null;
+      selectedCityCoordsText = cityInput.value.trim();
     });
   }
 
-  // "Change location" search. Google's widget fills the field with the
-  // full formatted description by default, including the country
-  // ("Lodi, CA, USA") — redundant noise since Roost is US-only right now,
-  // so this listener just tidies the displayed text after selection. The
-  // underlying value used for geocoding is already cleaned separately
-  // (see the apply-location handler), so this is purely cosmetic.
+  // "Change location" search — same coordinate-capture approach.
   const locInput = document.getElementById('loc-search');
   if (locInput && window.google && window.google.maps && window.google.maps.places) {
     const locAutocomplete = new google.maps.places.Autocomplete(locInput, {
       types: ['(cities)'],
       componentRestrictions: { country: 'us' },
-      fields: ['address_components']
+      fields: ['address_components', 'geometry']
     });
     locAutocomplete.addListener('place_changed', () => {
+      const place = locAutocomplete.getPlace();
       locInput.value = locInput.value.trim().replace(/,\s*(USA|United States)$/i, '').trim();
+      selectedLocCoords = (place && place.geometry && place.geometry.location)
+        ? { lat: place.geometry.location.lat(), lon: place.geometry.location.lng() }
+        : null;
+      selectedLocCoordsText = locInput.value.trim();
     });
   }
 }

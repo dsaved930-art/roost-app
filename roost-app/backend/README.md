@@ -897,6 +897,117 @@ one spot that would need revisiting — right now it's a deliberate,
 reasonable simplification for where the app actually is today, not an
 oversight.
 
+## The real fix for "0 results" — a genuine limitation, not a bug I introduced
+
+Traced this properly rather than guessing again: confirmed directly from
+the US Census Bureau's own documentation that their free geocoder is
+built for full street addresses — *"the building number and street name
+are required. City name, state, and ZIP code are optional."* A bare
+"Lodi, CA" query was never reliably supported by it, even for a real,
+well-known city. This was a pre-existing limitation, documented in this
+codebase's own comments from before autocomplete was ever added — not
+something the recent changes broke.
+
+**The real fix:** both the location search and the post form's city field
+now capture real coordinates directly from Google's Places response when
+a suggestion is actually selected — at no extra cost (same API session,
+just requesting one more field) — and use those directly instead of a
+separate, less-reliable Census lookup. Census is kept only as a fallback
+for the case where someone types a location without picking a suggestion.
+
+This fix reaches two places:
+- **Search** (`apply-location` handler) — uses the captured coordinates
+  directly, skipping the Census call entirely when available.
+- **Posting a listing** — the captured coordinates travel with the
+  submission and get saved immediately, rather than only via the
+  slower fire-and-forget Census geocoding afterward.
+
+**A real safeguard added along the way:** if someone selects a suggestion
+and then edits the text afterward, the captured coordinates are
+explicitly cleared — otherwise a listing could end up saved with
+coordinates for a *different* place than what's actually displayed.
+Also explicitly cleared when starting a fresh post, editing an existing
+one, or duplicating one, as defense in depth beyond just relying on the
+required-field validation forcing a fresh interaction.
+
+Tested the coordinate-selection logic against real coordinates, no
+selection made, missing data, malformed input, and specifically the
+classic "zero is a valid coordinate, not the same as missing" edge case
+— all handled correctly.
+
+## The actual bug behind "edited and re-selected Lodi, still 0 results"
+
+Confirmed via direct SQL query that even after a correct manual edit +
+dropdown re-selection, zero listings had saved coordinates — meaning the
+previous round's fix had a real bug in it, not a user-error or a separate
+issue. Traced it to a genuine race condition:
+
+The code had a listener clearing the captured coordinates on any `input`
+event, meant to protect against stale coordinates if someone edited the
+text *after* selecting a suggestion. But Google's autocomplete widget
+very likely fires its own synthetic `input` event as part of
+programmatically filling in the selected suggestion's text — meaning
+that "safety" listener could fire immediately after `place_changed`
+captured real coordinates, silently wiping them right back out. Selecting
+a suggestion looked like it worked (the city field filled in correctly),
+but the coordinates never survived to the point of saving.
+
+**Fixed by removing the event-ordering dependency entirely.** Instead of
+a listener trying to clear stale state at the right moment, the exact
+field text is captured *alongside* the coordinates, and compared against
+the field's current text at the moment of use (search, or posting/
+editing a listing). If they still match, the coordinates are used; if
+the text has changed since, they're correctly treated as stale. This
+sidesteps the whole category of "which event fires first" bugs rather
+than trying to out-guess it.
+
+Verified by directly simulating the exact race — capturing coordinates,
+then simulating the suspected stray `input` event firing right after —
+confirming the coordinates now survive it, while still correctly
+dropping them if the field is genuinely edited afterward.
+
+**Important: existing listings will need their coordinates re-captured
+again after this deploys** — the edit-and-reselect attempt from before
+this fix couldn't have worked, since the underlying bug was still live
+at the time.
+
+## Admin backfill tool for missing coordinates
+
+Solves the real gap in the previous fixes: those only ever helped a
+seller's *own* listing, since editing is (correctly, deliberately)
+owner-only — there was never a way to fix *other people's* existing
+listings that predate reliable geocoding. New admin-only tool in Site
+Stats: "Find and fix listings missing coordinates."
+
+- Runs entirely in the admin's own browser, not the server — the Places/
+  Maps key is restricted to the site's domain via HTTP referrer, which
+  only a real browser request satisfies; a server-to-server call from
+  DigitalOcean wouldn't carry that header at all.
+- Uses `google.maps.Geocoder` specifically (not Places Autocomplete) —
+  this needs the separate **Geocoding API** enabled in Google Cloud and
+  added to the existing key's restrictions, since it's a genuinely
+  different product from Places/Maps JavaScript despite sharing the same
+  loaded script.
+- Throttled between requests (250ms) rather than firing everything in a
+  tight loop — reasonable API citizenship, not just a technical
+  requirement.
+- Safe to run more than once — only ever queries for listings still
+  missing coordinates, so already-fixed ones are automatically skipped.
+- Two new admin-only endpoints: `GET /api/listings/admin/missing-coords`
+  (finds what needs fixing) and `PATCH /api/listings/:id/coordinates`
+  (updates just the coordinates — deliberately separate from the
+  owner-only full-edit route, since an admin fixing coordinates has no
+  reason to need permission over anything else on someone else's
+  listing).
+- **A real validation gap caught and fixed before shipping**: the
+  coordinate check used `Number(lat)` before validating — but
+  `Number(null)` evaluates to `0`, which is technically a finite number.
+  That meant an explicitly-null request could have silently passed
+  validation as if `(0, 0)` were a real, intended coordinate. Fixed by
+  explicitly rejecting `null`/`undefined` before the numeric conversion,
+  confirmed with a direct test that a genuine `(0, 0)` coordinate still
+  correctly passes.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

@@ -215,13 +215,26 @@ router.post('/', requireAuth, async (req, res) => {
     // Best-effort — if this fails or the city/state can't be resolved to
     // coordinates, the listing still exists and just won't show a distance
     // in search results. Never blocks or fails the listing creation itself.
-    geocodeCityState(newListing.city, newListing.state)
-      .then(coords => {
-        if (coords) {
-          return pool.query('UPDATE listings SET lat = $1, lon = $2 WHERE id = $3', [coords.lat, coords.lon, newListing.id]);
-        }
-      })
-      .catch(err => console.error('Geocoding update failed:', err));
+    //
+    // Real coordinates from the seller actually selecting a Places
+    // suggestion are used directly when available — skips a separate,
+    // less-reliable Census lookup entirely (Census's own geocoder is built
+    // for street addresses; a bare city/state can fail to resolve through
+    // it even for real, well-known cities). Falls back to Census only when
+    // no autocomplete selection was made (manual typing, or the feature
+    // isn't configured at all).
+    if (b.lat != null && b.lon != null && !isNaN(Number(b.lat)) && !isNaN(Number(b.lon))) {
+      pool.query('UPDATE listings SET lat = $1, lon = $2 WHERE id = $3', [Number(b.lat), Number(b.lon), newListing.id])
+        .catch(err => console.error('Could not save provided coordinates:', err));
+    } else {
+      geocodeCityState(newListing.city, newListing.state)
+        .then(coords => {
+          if (coords) {
+            return pool.query('UPDATE listings SET lat = $1, lon = $2 WHERE id = $3', [coords.lat, coords.lon, newListing.id]);
+          }
+        })
+        .catch(err => console.error('Geocoding update failed:', err));
+    }
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Something went wrong publishing your listing.' });
@@ -295,14 +308,21 @@ router.put('/:id', requireAuth, async (req, res) => {
         .catch(err => console.error('Could not save phone to profile:', err));
     }
 
-    // Best-effort re-geocode, same as on creation — city/state may have changed.
-    geocodeCityState(listing.city, listing.state)
-      .then(coords => {
-        if (coords) {
-          return pool.query('UPDATE listings SET lat = $1, lon = $2 WHERE id = $3', [coords.lat, coords.lon, listing.id]);
-        }
-      })
-      .catch(err => console.error('Geocoding update failed:', err));
+    // Best-effort re-geocode, same as on creation — city/state may have
+    // changed. Same coordinate-source priority as creating a listing: real
+    // Places-selected coordinates first, Census fallback otherwise.
+    if (b.lat != null && b.lon != null && !isNaN(Number(b.lat)) && !isNaN(Number(b.lon))) {
+      pool.query('UPDATE listings SET lat = $1, lon = $2 WHERE id = $3', [Number(b.lat), Number(b.lon), listing.id])
+        .catch(err => console.error('Could not save provided coordinates:', err));
+    } else {
+      geocodeCityState(listing.city, listing.state)
+        .then(coords => {
+          if (coords) {
+            return pool.query('UPDATE listings SET lat = $1, lon = $2 WHERE id = $3', [coords.lat, coords.lon, listing.id]);
+          }
+        })
+        .catch(err => console.error('Geocoding update failed:', err));
+    }
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not save your changes.' });
@@ -476,6 +496,49 @@ router.get('/admin/reported', requireAdmin, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not load reported listings.' });
+  }
+});
+
+// Powers the admin "backfill missing coordinates" tool. Runs from the
+// admin's own browser (not the server), since the Places/Maps API key is
+// restricted to the site's domain via HTTP referrer — a real browser
+// request satisfies that; a server-to-server call from DigitalOcean
+// would not. This just hands back the small list of what needs fixing.
+router.get('/admin/missing-coords', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, city, state FROM listings WHERE lat IS NULL OR lon IS NULL ORDER BY id`
+    );
+    res.json({ listings: result.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not load listings missing coordinates.' });
+  }
+});
+
+// Admin-only, coordinates-only update — deliberately separate from the
+// owner-only PUT /:id full-edit route. An admin fixing missing coordinates
+// has no reason to touch (or need permission to touch) anything else
+// about someone else's listing.
+router.patch('/:id/coordinates', requireAdmin, async (req, res) => {
+  try {
+    if (req.body.lat == null || req.body.lon == null) {
+      return res.status(400).json({ error: 'Valid lat and lon are required.' });
+    }
+    const lat = Number(req.body.lat);
+    const lon = Number(req.body.lon);
+    if (!isFinite(lat) || !isFinite(lon)) {
+      return res.status(400).json({ error: 'Valid lat and lon are required.' });
+    }
+    const result = await pool.query(
+      'UPDATE listings SET lat = $1, lon = $2 WHERE id = $3 RETURNING id',
+      [lat, lon, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not update coordinates.' });
   }
 });
 
