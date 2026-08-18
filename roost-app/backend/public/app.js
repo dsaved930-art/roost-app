@@ -177,9 +177,14 @@ function applyFilters() {
         if (l._distanceMiles > Number(activeLocation.radius)) return false;
       } else {
         // Fallback — one side (or both) couldn't be geocoded, so match by city/state text instead.
+        // Commas are stripped from both sides before comparing — "Lodi, CA" (what a Places
+        // selection produces) and "Lodi CA" (how listing text is built below) need to be
+        // treated as equivalent, not broken by a punctuation mismatch that has nothing to
+        // do with whether it's actually the same place.
         l._distanceMiles = null;
-        const hay = `${l.city} ${l.state}`.toLowerCase();
-        if (!hay.includes(activeLocation.text.toLowerCase())) return false;
+        const hay = `${l.city} ${l.state}`.toLowerCase().replace(/,/g, '');
+        const needle = activeLocation.text.toLowerCase().replace(/,/g, '');
+        if (!hay.includes(needle)) return false;
       }
     } else {
       l._distanceMiles = null;

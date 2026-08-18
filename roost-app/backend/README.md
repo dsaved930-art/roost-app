@@ -1008,6 +1008,32 @@ Stats: "Find and fix listings missing coordinates."
   confirmed with a direct test that a genuine `(0, 0)` coordinate still
   correctly passes.
 
+## Real bug: comma broke the fallback text match
+
+Reported as "dropdown selection shows 0 results, but plain typing works"
+— the opposite of what should happen if the recent coordinate fixes were
+the only factor, which was the tell that something else was going on.
+
+Confirmed directly in the code: the fallback text-match builds a
+listing's searchable text as `"lodi ca"` (space-separated, no comma), but
+selecting a Places suggestion produces search text like `"Lodi, CA"`
+**with a comma**. `"lodi ca".includes("lodi, ca")` is false — the comma
+alone broke an otherwise-correct match, even for the exact same city.
+Plain typing ("Lodi", no comma) worked purely by accident, not because
+that path was actually more correct.
+
+Fixed by stripping commas from both sides before comparing. Tested the
+exact previously-broken case (comma-containing search text against
+comma-free listing text) alongside the previously-working case and a
+genuinely-different city, to confirm the fix doesn't just patch the
+reported symptom while accidentally breaking or over-matching something
+else.
+
+**This fixes the fallback path specifically — it doesn't yet confirm
+whether the deeper coordinate-based distance search is fully working**,
+which depends on whether the backfill tool actually populated real
+coordinates on existing listings. That still needs direct verification.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:
