@@ -1034,6 +1034,16 @@ whether the deeper coordinate-based distance search is fully working**,
 which depends on whether the backfill tool actually populated real
 coordinates on existing listings. That still needs direct verification.
 
+## Category chips actually filter now
+
+A real, simple bug: clicking a category chip correctly highlighted it and
+updated the small filter-count badge, but the actual listings grid was
+never told to re-filter — the call that applies filters to what's
+displayed was missing from the click handler entirely. Added it. One
+line, but a genuine functional gap, not a visual one — the chip looked
+like it was working since it highlighted correctly, which likely made
+this easy to miss.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

@@ -106,6 +106,7 @@ function renderChips() {
       currentCategory = (currentCategory === btn.dataset.code) ? 'all' : btn.dataset.code;
       renderChips();
       updateFilterBadge();
+      applyFilters();
     });
   });
 }
