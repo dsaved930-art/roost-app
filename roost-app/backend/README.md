@@ -1056,6 +1056,27 @@ from. Deliberately separate from the admin-only "Remove listing" button
 — they're gated on different things (ownership vs. admin role) and can
 both be true or false independently.
 
+## New category: Softbills
+
+Added based on real evidence, not a guess — an earlier competitive
+search turned up an entire dedicated site (softbillsforsale.com) for
+exactly this category, which is a genuine, recognized distinction in
+aviculture (fruit/insect eaters — toucans, mynas, tanagers — as opposed
+to seed-eaters). No database migration needed — category was always a
+plain text field with no fixed list enforced anywhere server-side, so
+this was purely a frontend change: one new entry in the categories list
+(which also auto-populates the post form's dropdown, no separate change
+needed there), a matching SSR label for consistency on server-rendered
+pages, and a new distinct color.
+
+Deliberately held off on splitting any *existing* combined category
+(like Canaries out of "Finches & canaries") — unlike a pure addition,
+that would require manually reassigning every existing listing currently
+in the combined category, since categorization is a fixed value chosen
+at posting time, not something inferred automatically from the listing's
+text. Worth doing later if it's ever actually needed, not speculatively
+now.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

@@ -36,7 +36,7 @@ function publicUrl() {
 
 const CATEGORY_LABELS = {
   FIN: 'Finches & canaries', PAR: 'Parrots', POU: 'Poultry & gamebirds',
-  DOV: 'Pigeons & doves', WTF: 'Waterfowl', RAP: 'Birds of prey / raptors', OTH: 'Other'
+  DOV: 'Pigeons & doves', WTF: 'Waterfowl', RAP: 'Birds of prey / raptors', SFT: 'Softbills', OTH: 'Other'
 };
 
 // Builds the same visual markup the client renders (see buildListingPageHtml

@@ -24,6 +24,7 @@ const CATEGORIES = [
   { code: 'DOV', label: 'Pigeons & doves', color: 'var(--dov)', dark: 'var(--dov-dark)', icon: '🕊️' },
   { code: 'WTF', label: 'Waterfowl', color: 'var(--wtf)', dark: 'var(--wtf-dark)', icon: '🦆' },
   { code: 'RAP', label: 'Birds of prey / raptors', color: 'var(--rap)', dark: 'var(--rap-dark)', icon: '🦅' },
+  { code: 'SFT', label: 'Softbills', color: 'var(--sft)', dark: 'var(--sft-dark)', icon: '🍇' },
   { code: 'OTH', label: 'Other', color: 'var(--oth)', dark: 'var(--oth-dark2)', icon: '🐦' },
 ];
 const SCAM_PATTERNS = ['wire transfer', 'western union', 'money gram', 'moneygram', 'gift card', 'ship without meeting', 'shipping only', 'cashapp only', 'venmo only', 'no meeting'];

@@ -19,6 +19,7 @@
     --pou:#B14A2B; --pou-dark:#6E2C18;
     --rap:#7A2E2E; --rap-dark:#4A1A1A;
     --oth:#4A5B8C; --oth-dark2:#28315B;
+    --sft:#B85C7C; --sft-dark:#6E2E44;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--panel);color:var(--ink);font-family:'Public Sans',sans-serif;line-height:1.5;}
