@@ -1044,6 +1044,18 @@ line, but a genuine functional gap, not a visual one — the chip looked
 like it was working since it highlighted correctly, which likely made
 this easy to miss.
 
+## Edit button on the listing detail page
+
+Previously "Edit" only existed inside My Listings — no way to jump into
+editing directly from actually viewing your own listing. Added an
+owner-only "Edit this listing" button on the detail page, using the
+`postedByMe` flag the backend already returned (no new backend work
+needed) and the same `editListing()` function already used everywhere
+else, so the behavior is identical no matter which screen you started
+from. Deliberately separate from the admin-only "Remove listing" button
+— they're gated on different things (ownership vs. admin role) and can
+both be true or false independently.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

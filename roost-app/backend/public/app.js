@@ -348,6 +348,7 @@ function buildListingPageHtml(l) {
     <div id="inline-compose-wrap"></div>
     ${contactBoxHtml}
     <div class="safety-note">Roost doesn't verify sellers or handle payments. Meet in person before any money changes hands, and never wire funds or pay with gift cards.</div>
+    ${l.postedByMe ? `<div class="modal-actions"><button class="secondary" id="detail-edit-btn" style="width:100%;">Edit this listing</button></div>` : ''}
     ${isAdmin() ? `<div class="modal-actions"><button class="secondary" id="modal-admin-remove" style="color:var(--rust-dark);border-color:var(--rust);">Remove listing</button></div>` : ''}
     <button class="report-link" id="report-btn">Report this listing</button>
   `;
@@ -357,6 +358,8 @@ function wireListingPageHandlers(l, id) {
   document.getElementById('report-btn').addEventListener('click', () => reportListing(id));
   const contactSigninBtn = document.getElementById('contact-signin-btn');
   if (contactSigninBtn) contactSigninBtn.addEventListener('click', () => openAuthModal('login', () => renderListingPage(id)));
+  const detailEditBtn = document.getElementById('detail-edit-btn');
+  if (detailEditBtn) detailEditBtn.addEventListener('click', () => editListing(id));
   const adminRemoveBtn = document.getElementById('modal-admin-remove');
   if (adminRemoveBtn) adminRemoveBtn.addEventListener('click', () => removeListing(id));
   const messageSellerBtn = document.getElementById('message-seller-btn');
