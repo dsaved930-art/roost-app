@@ -73,6 +73,9 @@ router.get('/', requireAdmin, async (req, res) => {
        FROM listings
        WHERE status = 'sold' AND sold_at IS NOT NULL`
     );
+    const soldCountResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM listings WHERE status = 'sold'`
+    );
 
     const verifiedBreedersResult = await pool.query(
       `SELECT COUNT(*)::int AS count FROM users WHERE verification_status = 'verified'`
@@ -94,6 +97,7 @@ router.get('/', requireAdmin, async (req, res) => {
     out.totalMessages = totalMessagesResult.rows[0].total;
     out.totalConversations = totalConversationsResult.rows[0].total;
     out.avgDaysToSale = avgDaysToSaleResult.rows[0].avg_days;
+    out.soldCount = soldCountResult.rows[0].count;
     out.verifiedBreeders = verifiedBreedersResult.rows[0].count;
     out.savedSearchTotal = savedSearchStatsResult.rows[0].total;
     out.savedSearchUsers = savedSearchStatsResult.rows[0].users;

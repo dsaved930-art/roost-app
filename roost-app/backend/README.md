@@ -1077,6 +1077,46 @@ at posting time, not something inferred automatically from the listing's
 text. Worth doing later if it's ever actually needed, not speculatively
 now.
 
+## Real gap found in Site Stats: a plain "listings sold" count
+
+Confirmed by checking the actual code rather than assuming: "Avg. days
+to sell" genuinely was already there, but a raw sold *count* was never
+actually built — only the average existed. Added it as its own stat card
+right next to the average, where it reads naturally.
+
+Also fixed the actual source of the "is this broken?" confusion: when
+zero listings have sold yet, the average correctly shows "—" (nothing to
+average), but with no explanation that's easy to mistake for a missing
+or broken feature rather than a legitimate "no data yet" state. The
+label now explicitly says "(none yet)" in that case, so it's unambiguous
+which situation you're looking at.
+
+## Full names hidden from public view — first name shown, full name still collected at signup
+
+Fixes real exposure raised directly by a user noticing full names showing
+on listings. Applied at three places, all pulling from the same shared
+helper (`utils/displayName.js`):
+
+- A listing's seller info on the detail page
+- A seller's public profile page
+- Reviewer names shown in a seller's review history (found this one while
+  investigating — same underlying exposure, on the buyer's side instead
+  of the seller's)
+
+**Retroactively fixes every existing listing immediately on deploy** — no
+migration, no asking anyone to re-edit anything. The fix works because
+it's applied at the moment a name is *read* for public display, not by
+changing what's stored. The `users.name` column, collected at signup, is
+completely untouched — still the full name, still used internally
+(private email greetings, admin tools) — it's just never sent to the
+browser in full on anything public-facing anymore.
+
+Deliberately implemented server-side (the full name never even reaches
+the browser) rather than truncating it in the frontend, which could be
+trivially bypassed by looking at the raw API response in dev tools —
+same discipline as other security fixes in this app, not just a
+cosmetic display change.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

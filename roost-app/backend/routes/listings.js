@@ -4,6 +4,7 @@ const pool = require('../db');
 const { requireAdmin, requireAuth } = require('../middleware/auth');
 const { notifySavedSearches } = require('../services/alerts');
 const { sendNewMessageEmail } = require('../utils/messageNotify');
+const { publicDisplayName } = require('../utils/displayName');
 const { geocodeCityState } = require('../utils/geocode');
 
 // Browse — summaries only. Contact info is never included here, at all, for anyone.
@@ -101,7 +102,7 @@ router.get('/:id', async (req, res) => {
         );
         seller = {
           id: sellerResult.rows[0].id,
-          name: sellerResult.rows[0].name,
+          name: publicDisplayName(sellerResult.rows[0].name),
           memberSince: sellerResult.rows[0].created_at,
           verified: sellerResult.rows[0].verification_status === 'verified',
           reviewCount: ratingResult.rows[0].count,

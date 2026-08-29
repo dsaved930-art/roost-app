@@ -1236,7 +1236,8 @@ async function openStats() {
         <div class="stat-card"><div class="num">${s.totalListingViews || 0}</div><div class="label">Total listing views</div></div>
         <div class="stat-card"><div class="num">${s.totalConversations || 0}</div><div class="label">Buyer-seller conversations started</div></div>
         <div class="stat-card"><div class="num">${messageRate}%</div><div class="label">Views that led to a message</div></div>
-        <div class="stat-card"><div class="num">${s.avgDaysToSale != null ? s.avgDaysToSale : '—'}</div><div class="label">Avg. days to sell</div></div>
+        <div class="stat-card"><div class="num">${s.soldCount || 0}</div><div class="label">Listings sold</div></div>
+        <div class="stat-card"><div class="num">${s.avgDaysToSale != null ? s.avgDaysToSale : '—'}</div><div class="label">Avg. days to sell${s.avgDaysToSale == null ? ' (none yet)' : ''}</div></div>
       </div>
       <div class="stats-grid">
         <div class="stat-card"><div class="num">${s.verifiedBreeders || 0}</div><div class="label">Verified breeders</div></div>

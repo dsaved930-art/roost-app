@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { publicDisplayName } = require('../utils/displayName');
 
 // Public — anyone can view a seller's profile and reviews, signed in or not.
 // This is a trust signal meant to be seen before deciding to message someone.
@@ -25,6 +26,7 @@ router.get('/:id/profile', async (req, res) => {
        LIMIT 50`,
       [user.id]
     );
+    const publicReviews = reviewsResult.rows.map(r => ({ ...r, reviewerName: publicDisplayName(r.reviewerName) }));
 
     const listingsResult = await pool.query(
       `SELECT id, title, category, breed, free, price, city, state, photo_thumb AS "photoUrl", created_at AS "createdAt"
@@ -35,13 +37,13 @@ router.get('/:id/profile', async (req, res) => {
     res.json({
       user: {
         id: user.id,
-        name: user.name,
+        name: publicDisplayName(user.name),
         memberSince: user.created_at,
         verified: user.verification_status === 'verified',
         avgRating: Math.round(ratingResult.rows[0].avg * 10) / 10,
         reviewCount: ratingResult.rows[0].count
       },
-      reviews: reviewsResult.rows,
+      reviews: publicReviews,
       listings: listingsResult.rows
     });
   } catch (e) {
