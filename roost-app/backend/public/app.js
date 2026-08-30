@@ -696,7 +696,7 @@ function resizeImageToDataUrl(img, maxWidth, quality) {
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-  return canvas.toDataURL('image/jpeg', quality);
+  return { canvas, dataUrl: canvas.toDataURL('image/jpeg', quality) };
 }
 const MAX_PHOTOS = 5;
 
@@ -749,9 +749,20 @@ document.getElementById('f-photo-file').addEventListener('change', async (e) => 
     if (!file.type.startsWith('image/')) { errEl.textContent = 'Please choose image files only.'; continue; }
     try {
       const img = await readImageFile(file);
+      // The full-size image is generated first, directly from the original —
+      // the thumbnail is then generated FROM that already-downscaled result,
+      // not independently from the original again. A very large modern phone
+      // photo (12+ megapixels) being decoded and drawn twice back-to-back is
+      // a real, plausible source of the kind of intermittent, image-specific
+      // corruption reported here (one photo's thumbnail rendering solid
+      // black while everything else about it displayed correctly) —
+      // chaining from the smaller, already-processed canvas instead avoids
+      // asking the browser to handle the huge original more than once.
+      const fullResult = resizeImageToDataUrl(img, 900, 0.75);
+      const thumbResult = resizeImageToDataUrl(fullResult.canvas, 260, 0.6);
       pendingPhotos.push({
-        thumb: resizeImageToDataUrl(img, 260, 0.6),
-        full: resizeImageToDataUrl(img, 900, 0.75)
+        thumb: thumbResult.dataUrl,
+        full: fullResult.dataUrl
       });
     } catch (err) {
       errEl.textContent = 'Could not process one of those images — try a different photo.';
@@ -2062,7 +2073,7 @@ async function renderVerificationSection() {
     if (!file || !file.type.startsWith('image/')) return;
     try {
       const img = await readImageFile(file);
-      pendingVerifyDoc = resizeImageToDataUrl(img, 900, 0.7);
+      pendingVerifyDoc = resizeImageToDataUrl(img, 900, 0.7).dataUrl;
       dropzone.innerHTML = `<img class="vi-doc" src="${pendingVerifyDoc}" alt="">`;
     } catch (e) {
       showToast('Could not process that image.');

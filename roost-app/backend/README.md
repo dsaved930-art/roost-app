@@ -1117,6 +1117,33 @@ trivially bypassed by looking at the raw API response in dev tools —
 same discipline as other security fixes in this app, not just a
 cosmetic display change.
 
+## Real bug: a listing's card thumbnail rendered solid black
+
+Reported directly: a real photo displayed correctly on the listing's own
+detail page, but appeared as a solid black rectangle on the browse grid.
+Different photo, same underlying pattern the app has hit before (this
+class of "small thumbnail specifically corrupted, full image fine" bug) —
+worth understanding, not just patching blindly.
+
+**Diagnosis, not a certainty, but well-reasoned**: both the thumbnail and
+the full-size image were being generated *independently*, each decoding
+and drawing the original full-resolution source photo from scratch. A
+modern phone photo can be 12+ megapixels — asking a mobile browser to
+decode and draw that huge original twice, back-to-back, is a real,
+plausible source of the kind of intermittent, image-specific corruption
+reported here, especially under real-world memory pressure on an actual
+phone (rather than a desktop testing environment).
+
+**The fix**: generate the full-size image first, then derive the
+thumbnail *from that already-downscaled result*, rather than
+independently re-decoding the original a second time. Confirmed this
+produces byte-for-byte identical final thumbnail dimensions either way —
+this changes the processing path, not the output quality or size.
+
+This function is shared with the breeder-verification document upload,
+which also needed updating for the changed return shape — checked both
+call sites, not just the one directly involved in the report.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:
