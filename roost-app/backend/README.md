@@ -1144,6 +1144,99 @@ This function is shared with the breeder-verification document upload,
 which also needed updating for the changed return shape — checked both
 call sites, not just the one directly involved in the report.
 
+## Real bug: grid thumbnails looked pixelated, detail page didn't
+
+Reported directly, with a clean before/after comparison (same photo, blocky
+on the card, sharp on the detail page) — that comparison is what made this
+diagnosable rather than a guess.
+
+**Root cause**: the browse grid's CSS sets card width as `minmax(260px, 1fr)`
+— 260px is only the *minimum*, and on most real screens cards render
+noticeably wider than that. But thumbnails were only ever generated *at*
+260px wide. Except in the narrowest possible case, the browser was
+stretching a small, compressed image beyond its actual resolution to fill
+a bigger box — textbook upscaling blur, made more visible here by the
+photo's fine feather detail and sharp contrast.
+
+**Fix**: generate thumbnails at 480px instead of 260px (comfortably
+covering realistic card widths, not just the grid's stated minimum), and
+bumped quality slightly (0.6 → 0.72) too. Confirmed the larger thumbnail
+still displays correctly in every *smaller* context it's also used in (My
+Listings' 64px thumbnails, the seller-profile grid) — downscaling a
+larger image is always safe, so this only improves the large-card case
+without risking anything elsewhere.
+
+**Same caveat as the last photo-related fix: this only affects new photo
+uploads going forward.** The Pakistani High Flyers listing (and any other
+existing listing) would need its photo re-added the same way as before —
+open Edit, remove the photo, re-add the same file, save — to actually get
+a sharp thumbnail from the fixed code.
+
+## Admin tool: regenerate all existing thumbnails, no seller involvement needed
+
+Corrects bad advice I gave a couple rounds ago — I suggested re-editing
+existing listings to fix pixelated thumbnails, forgetting something I'd
+specifically confirmed earlier in this build: editing is owner-only,
+enforced on the server, admin included. That suggestion genuinely
+wouldn't have worked.
+
+The real fix is better anyway: every existing listing's *full-size*
+photo was always fine — only thumbnail *generation* was ever broken. That
+means fixing this never needed anyone's original photo file at all, just
+a way to rebuild the thumbnail from what's already safely stored. New
+admin-only tool in Site Stats: "Regenerate all listing thumbnails."
+
+- Covers both the listing's cached cover photo *and* every individual
+  photo in the multi-photo gallery table — a listing with 5 photos has 5
+  separate thumbnails, not just one.
+- Reuses the exact same `resizeImageToDataUrl` function used for brand-new
+  uploads, so regenerated thumbnails are produced by identical logic to
+  the fixed upload path — not a second, separately-maintained
+  implementation that could quietly drift out of sync later.
+- Runs from the admin's browser, same reasoning as the coordinate backfill
+  tool — this needs real canvas support to resize images, which a server
+  process doesn't have.
+- Safe to run more than once — always regenerates from the existing full
+  photo, never touches or depends on the current (possibly broken)
+  thumbnail.
+- Two new admin-only endpoints: `GET /api/listings/admin/all-photos`
+  (finds everything needing regeneration) and
+  `PATCH /api/listings/admin/photo-thumb` (updates one thumbnail — either
+  a listing's cover or one gallery photo, based on a `type` field).
+  Validated against real thumbnails, an invalid type value, missing data,
+  and a malformed non-image string — all correctly rejected or accepted.
+
+## Thumbnail regeneration made genuinely undoable, with a preview first
+
+Real, reasonable concern raised directly: running an irreversible bulk
+change across every real listing's photos, with no way back if something
+looked wrong, was too risky to just trust blindly. Rebuilt the tool with
+two real safety layers instead of one "run it and hope" button.
+
+**Preview first**: clicking the tool now generates real before/after
+results for just 3 sample photos and displays them side by side —
+nothing is saved to the database at this point. Only after explicitly
+clicking "looks good, do the rest" does it touch anything beyond that
+sample. Clicking Cancel leaves everything completely untouched.
+
+**A genuine, complete undo, not just a preview**: added a
+`photo_thumb_backup` column to both the listings and listing_photos
+tables. Every time a thumbnail gets regenerated, the *previous* value is
+copied into that backup column in the same atomic UPDATE statement that
+sets the new one — not a separate step that could be skipped or fail
+silently. A new "Restore previous thumbnails" button reverses this
+completely, for both cover photos and every gallery photo.
+
+**Verified this actually works correctly**, not just assumed from reading
+the SQL: simulated the exact backup/restore logic against three real
+scenarios — a normal regenerate-then-restore cycle, restoring with
+nothing to restore (confirmed as a safe no-op, not an error), and running
+regeneration twice before restoring once. That last one surfaced a real,
+worth-knowing limitation: this is a *one-level* undo — it reverts the
+most recent regeneration, not a full history back to the true original if
+the tool were run multiple times without restoring in between. Documented
+clearly rather than left as a surprise.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

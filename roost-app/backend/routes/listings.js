@@ -543,6 +543,86 @@ router.patch('/:id/coordinates', requireAdmin, async (req, res) => {
   }
 });
 
+// Powers the admin "regenerate thumbnails" tool. Every existing listing
+// already has a good, sharp full-size photo — only the thumbnail generation
+// was ever broken, so this never needs to touch anyone's original photo or
+// ask any seller to do anything. Runs from the admin's browser since
+// resizing needs real canvas support, same reasoning as the coordinate
+// backfill tool. Covers both the listing's cached cover photo AND every row
+// in the multi-photo gallery table — a listing with 5 photos has 5 separate
+// thumbnails that all need the same fix, not just the cover.
+router.get('/admin/all-photos', requireAdmin, async (req, res) => {
+  try {
+    const covers = await pool.query(
+      `SELECT id, photo_thumb AS "photoThumb", photo_full AS "photoFull" FROM listings WHERE photo_full IS NOT NULL`
+    );
+    const gallery = await pool.query(
+      `SELECT id, photo_thumb AS "photoThumb", photo_full AS "photoFull" FROM listing_photos`
+    );
+    res.json({
+      covers: covers.rows,
+      gallery: gallery.rows
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not load photos.' });
+  }
+});
+
+router.patch('/admin/photo-thumb', requireAdmin, async (req, res) => {
+  try {
+    const { type, id, thumbDataUrl } = req.body;
+    if (!thumbDataUrl || !String(thumbDataUrl).startsWith('data:image')) {
+      return res.status(400).json({ error: 'A valid thumbnail image is required.' });
+    }
+    // The old thumbnail is copied into the backup column in the SAME
+    // statement that sets the new one — a real, atomic undo path, not a
+    // separate "hope nothing goes wrong before I remember to back it up"
+    // step. This is why the "Restore previous thumbnails" button below
+    // actually works even after a full bulk regeneration.
+    if (type === 'cover') {
+      const result = await pool.query(
+        'UPDATE listings SET photo_thumb_backup = photo_thumb, photo_thumb = $1 WHERE id = $2 RETURNING id',
+        [thumbDataUrl, id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    } else if (type === 'gallery') {
+      const result = await pool.query(
+        'UPDATE listing_photos SET photo_thumb_backup = photo_thumb, photo_thumb = $1 WHERE id = $2 RETURNING id',
+        [thumbDataUrl, id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Photo not found.' });
+    } else {
+      return res.status(400).json({ error: 'type must be "cover" or "gallery".' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not update thumbnail.' });
+  }
+});
+
+// Full undo for the regeneration tool — copies every backed-up thumbnail
+// back into the live column, for both the cover photo and every gallery
+// photo. Only touches rows that actually have a backup, so running this
+// without ever having regenerated anything is a safe no-op, not an error.
+router.post('/admin/restore-thumbnails', requireAdmin, async (req, res) => {
+  try {
+    const coversResult = await pool.query(
+      `UPDATE listings SET photo_thumb = photo_thumb_backup, photo_thumb_backup = NULL
+       WHERE photo_thumb_backup IS NOT NULL RETURNING id`
+    );
+    const galleryResult = await pool.query(
+      `UPDATE listing_photos SET photo_thumb = photo_thumb_backup, photo_thumb_backup = NULL
+       WHERE photo_thumb_backup IS NOT NULL RETURNING id`
+    );
+    res.json({ coversRestored: coversResult.rows.length, galleryRestored: galleryResult.rows.length });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not restore thumbnails.' });
+  }
+});
+
 router.delete('/admin/:id', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM listings WHERE id = $1 RETURNING id', [req.params.id]);

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS listings (
   state          TEXT NOT NULL,
   description    TEXT NOT NULL,
   photo_thumb    TEXT,                          -- small base64 image for grid cards
+  photo_thumb_backup TEXT,                      -- previous thumbnail, preserved during bulk regeneration for a real undo path
   photo_full     TEXT,                          -- larger base64 image for detail view
   permit_number  TEXT,                          -- only set for Birds of Prey / Raptors listings
   poster_name    TEXT NOT NULL,
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS listing_photos (
   id             SERIAL PRIMARY KEY,
   listing_id     INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
   photo_thumb    TEXT NOT NULL,
+  photo_thumb_backup TEXT,                      -- same undo mechanism as the cover photo
   photo_full     TEXT NOT NULL,
   position       SMALLINT NOT NULL DEFAULT 0,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -165,6 +167,8 @@ CREATE INDEX IF NOT EXISTS idx_saved_search_matches_search ON saved_search_match
 -- database these are no-ops since CREATE TABLE above already includes them.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS photo_thumb_backup TEXT;
+ALTER TABLE listing_photos ADD COLUMN IF NOT EXISTS photo_thumb_backup TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'none';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_business_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_phone TEXT;

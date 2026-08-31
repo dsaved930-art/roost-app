@@ -759,7 +759,7 @@ document.getElementById('f-photo-file').addEventListener('change', async (e) => 
       // chaining from the smaller, already-processed canvas instead avoids
       // asking the browser to handle the huge original more than once.
       const fullResult = resizeImageToDataUrl(img, 900, 0.75);
-      const thumbResult = resizeImageToDataUrl(fullResult.canvas, 260, 0.6);
+      const thumbResult = resizeImageToDataUrl(fullResult.canvas, 480, 0.72);
       pendingPhotos.push({
         thumb: thumbResult.dataUrl,
         full: fullResult.dataUrl
@@ -1327,6 +1327,150 @@ document.getElementById('backfill-coords-btn').addEventListener('click', async (
     (failed > 0 ? ` ${failed} couldn't be resolved automatically (unusual city/state text — may need a manual look).` : '');
   btn.disabled = false;
 });
+
+// Regenerates thumbnails for existing listings from their already-good
+// full-size photo — no seller involvement needed, since the full image was
+// never actually broken, only the thumbnail generation was. Reuses the
+// exact same resizeImageToDataUrl function used for brand-new uploads, so
+// regenerated thumbnails are produced by identical logic, not a separate
+// reimplementation that could quietly drift out of sync over time.
+//
+// Deliberately two-step, not one button that processes everything
+// immediately: first previews real before/after results on a small
+// sample, and only touches every other photo once that's explicitly
+// confirmed. The backend also backs up every previous thumbnail before
+// replacing it, so "Restore previous thumbnails" below is a genuine,
+// complete undo even after a full run — this is a one-level undo (it
+// reverts the most recent regeneration), not unlimited history.
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+let allPhotosForThumbRegen = null;
+const PREVIEW_SAMPLE_SIZE = 3;
+
+async function regenerateOnePhoto(p) {
+  const img = await loadImageFromDataUrl(p.photoFull);
+  const thumbResult = resizeImageToDataUrl(img, 480, 0.72);
+  await api('/listings/admin/photo-thumb', {
+    method: 'PATCH',
+    body: JSON.stringify({ type: p.type, id: p.id, thumbDataUrl: thumbResult.dataUrl })
+  });
+  return thumbResult.dataUrl;
+}
+
+document.getElementById('backfill-thumbs-preview-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('backfill-thumbs-preview-btn');
+  const statusEl = document.getElementById('backfill-thumbs-status');
+  const previewArea = document.getElementById('thumb-preview-area');
+  btn.disabled = true;
+  statusEl.textContent = 'Loading photos…';
+
+  try {
+    const data = await api('/listings/admin/all-photos');
+    allPhotosForThumbRegen = [
+      ...data.covers.map(p => ({ type: 'cover', id: p.id, photoThumb: p.photoThumb, photoFull: p.photoFull })),
+      ...data.gallery.map(p => ({ type: 'gallery', id: p.id, photoThumb: p.photoThumb, photoFull: p.photoFull }))
+    ];
+  } catch (e) {
+    statusEl.textContent = 'Could not load the list of photos.';
+    btn.disabled = false;
+    return;
+  }
+
+  if (allPhotosForThumbRegen.length === 0) {
+    statusEl.textContent = 'No photos found.';
+    btn.disabled = false;
+    return;
+  }
+
+  const sample = allPhotosForThumbRegen.slice(0, PREVIEW_SAMPLE_SIZE);
+  statusEl.textContent = `Generating a preview from ${sample.length} photo${sample.length === 1 ? '' : 's'}…`;
+
+  const previewRows = [];
+  for (const p of sample) {
+    try {
+      const img = await loadImageFromDataUrl(p.photoFull);
+      const newThumb = resizeImageToDataUrl(img, 480, 0.72).dataUrl;
+      previewRows.push({ old: p.photoThumb, new: newThumb });
+    } catch (e) {
+      console.error('Preview failed for a photo:', e.message);
+    }
+  }
+
+  previewArea.innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Before (current) vs. after (regenerated) — nothing has been saved yet</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${previewRows.map(r => `
+        <div style="display:flex;gap:10px;align-items:center;">
+          <div style="flex:1;text-align:center;"><img src="${r.old || ''}" style="max-width:100%;max-height:110px;border-radius:6px;border:1px solid var(--line);"><div style="font-size:11px;color:var(--muted);margin-top:3px;">Current</div></div>
+          <div style="flex:1;text-align:center;"><img src="${r.new}" style="max-width:100%;max-height:110px;border-radius:6px;border:1px solid var(--line);"><div style="font-size:11px;color:var(--muted);margin-top:3px;">Regenerated</div></div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="secondary" id="thumb-preview-cancel" style="flex:1;">Cancel, don't change anything</button>
+      <button class="primary" id="thumb-preview-continue" style="flex:1;">Looks good — do the rest (${allPhotosForThumbRegen.length - sample.length} remaining)</button>
+    </div>
+  `;
+  previewArea.style.display = 'block';
+  statusEl.textContent = '';
+  btn.disabled = false;
+
+  document.getElementById('thumb-preview-cancel').addEventListener('click', () => {
+    previewArea.style.display = 'none';
+    previewArea.innerHTML = '';
+    statusEl.textContent = 'Cancelled — nothing was changed.';
+  });
+
+  document.getElementById('thumb-preview-continue').addEventListener('click', async () => {
+    const continueBtn = document.getElementById('thumb-preview-continue');
+    const cancelBtn = document.getElementById('thumb-preview-cancel');
+    continueBtn.disabled = true;
+    cancelBtn.disabled = true;
+
+    let fixed = 0, failed = 0;
+    for (let i = 0; i < allPhotosForThumbRegen.length; i++) {
+      const p = allPhotosForThumbRegen[i];
+      statusEl.textContent = `Processing ${i + 1} of ${allPhotosForThumbRegen.length}… (${fixed} fixed, ${failed} failed so far)`;
+      try {
+        await regenerateOnePhoto(p);
+        fixed++;
+      } catch (e) {
+        console.error('Could not regenerate thumbnail for', p.type, p.id, '-', e.message);
+        failed++;
+      }
+      await new Promise(r => setTimeout(r, 60));
+    }
+
+    statusEl.textContent = `Done — regenerated ${fixed} of ${allPhotosForThumbRegen.length} thumbnails.` +
+      (failed > 0 ? ` ${failed} couldn't be processed (may need a manual look).` : '') +
+      ' If anything looks wrong, use "Restore previous thumbnails" below.';
+    previewArea.style.display = 'none';
+    previewArea.innerHTML = '';
+  });
+});
+
+document.getElementById('restore-thumbs-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('restore-thumbs-btn');
+  const statusEl = document.getElementById('backfill-thumbs-status');
+  if (!confirm('This reverts every thumbnail back to whatever it was before the last regeneration. Continue?')) return;
+  btn.disabled = true;
+  statusEl.textContent = 'Restoring…';
+  try {
+    const result = await api('/listings/admin/restore-thumbnails', { method: 'POST' });
+    statusEl.textContent = `Restored ${result.coversRestored} cover photo${result.coversRestored === 1 ? '' : 's'} and ${result.galleryRestored} gallery photo${result.galleryRestored === 1 ? '' : 's'} to their previous thumbnails.`;
+  } catch (e) {
+    statusEl.textContent = 'Could not restore thumbnails.';
+  }
+  btn.disabled = false;
+});
+
 
 document.getElementById('stats-close').addEventListener('click', () => document.getElementById('stats-overlay').classList.remove('show'));
 document.getElementById('stats-overlay').addEventListener('click', (e) => { if (e.target.id === 'stats-overlay') document.getElementById('stats-overlay').classList.remove('show'); });

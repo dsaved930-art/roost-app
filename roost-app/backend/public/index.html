@@ -374,6 +374,22 @@
     </div>
     <button class="secondary" id="backfill-coords-btn" style="width:100%;">Find and fix listings missing coordinates</button>
     <div id="backfill-status" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
+
+    <div class="stats-section-title">Regenerate thumbnails</div>
+    <div class="stats-sub" style="margin-bottom:12px;">
+      Grid thumbnails used to be generated too small for how large cards
+      actually render, causing visible pixelation on existing listings.
+      Every listing's full-size photo was already fine — this just rebuilds
+      the thumbnail from that existing photo. Every previous thumbnail is
+      automatically backed up before being replaced, so this is fully
+      undoable with the restore button below.
+    </div>
+    <button class="secondary" id="backfill-thumbs-preview-btn" style="width:100%;">Preview on a few photos first</button>
+    <div id="thumb-preview-area" style="display:none;margin-top:14px;"></div>
+    <div style="margin-top:10px;display:flex;gap:8px;">
+      <button class="secondary" id="restore-thumbs-btn" style="flex:1;">Restore previous thumbnails</button>
+    </div>
+    <div id="backfill-thumbs-status" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
   </div>
 </div>
 
