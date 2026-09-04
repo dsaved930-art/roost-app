@@ -4,6 +4,7 @@ const pool = require('../db');
 const { requireAdmin, requireAuth } = require('../middleware/auth');
 const { notifySavedSearches } = require('../services/alerts');
 const { sendNewMessageEmail } = require('../utils/messageNotify');
+const { containsUrl } = require('../utils/linkDetection');
 const { publicDisplayName } = require('../utils/displayName');
 const { geocodeCityState } = require('../utils/geocode');
 
@@ -392,6 +393,7 @@ router.post('/:id/message', requireAuth, async (req, res) => {
     const body = String((req.body && req.body.body) || '').trim();
     if (!body) return res.status(400).json({ error: 'Message cannot be empty.' });
     if (body.length > 2000) return res.status(400).json({ error: 'Message is too long.' });
+    if (containsUrl(body)) return res.status(400).json({ error: 'Links aren\'t allowed in messages — this is to help keep everyone safe from off-platform scams.' });
 
     const listingResult = await pool.query('SELECT id, posted_by, title FROM listings WHERE id = $1', [req.params.id]);
     if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });

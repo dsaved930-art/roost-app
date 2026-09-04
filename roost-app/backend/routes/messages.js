@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { sendNewMessageEmail } = require('../utils/messageNotify');
+const { containsUrl } = require('../utils/linkDetection');
 
 // List all conversations the current user is part of (as buyer or seller),
 // newest activity first, with an unread count for the badge in the header.
@@ -125,6 +126,7 @@ router.post('/:id/messages', requireAuth, async (req, res) => {
     const body = String((req.body && req.body.body) || '').trim();
     if (!body) return res.status(400).json({ error: 'Message cannot be empty.' });
     if (body.length > 2000) return res.status(400).json({ error: 'Message is too long.' });
+    if (containsUrl(body)) return res.status(400).json({ error: 'Links aren\'t allowed in messages — this is to help keep everyone safe from off-platform scams.' });
 
     const inserted = await pool.query(
       `INSERT INTO messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)

@@ -1237,6 +1237,125 @@ most recent regeneration, not a full history back to the true original if
 the tool were run multiple times without restoring in between. Documented
 clearly rather than left as a surprise.
 
+## Scroll position now preserved when going back from a listing
+
+Reported directly: clicking into a listing then going back always landed
+back at the very top of the browse page, losing your place and forcing a
+full re-scroll to find it again.
+
+**Root cause**: every return to the browse view calls `loadListings()`,
+which wipes the grid down to a brief "Loading listings…" placeholder and
+re-fetches everything from the server — naturally collapsing the page
+back to the top in the process.
+
+**Fix**: the scroll position is captured at the exact moment you click
+into a listing, and restored after the grid has real content again
+(restoring earlier would just scroll to nothing, since the loading
+placeholder is far shorter than the real page).
+
+**A real edge case caught and handled deliberately, not by accident**:
+clicking the logo or the "Browse" tab explicitly also route through the
+same view-switching code — but those are meant to feel like a fresh
+start, not "go back to where I was." Both now explicitly clear the saved
+position, so only the actual "← Back to Browse" button (and the
+browser's native back button, which flows through the same logic)
+restores your place — clicking the logo always gives you a clean top-of-
+page view, as expected.
+
+## Site Stats access — clarified something I'd described wrong earlier
+
+Checked the actual code before changing anything, and found this was
+already close to working as asked: the link was already visible to
+everyone (never actually hidden), and the real data was already
+protected server-side (`requireAdmin` on the `/api/stats` route) — a
+non-admin already couldn't see any real numbers. The one real gap: it
+briefly opened the whole stats panel and showed "Loading…" before
+rejecting them, which read more like a broken load than a clean access
+check.
+
+Fixed by checking admin status immediately, before opening anything —
+non-admins now get a direct, instant "You do not have access to this
+page." popup, using the same plain browser-confirm style already used
+elsewhere in this app (the thumbnail-restore confirmation), rather than
+introducing a new UI pattern. The server-side protection is untouched
+and still the real security boundary — this change is purely about a
+faster, cleaner experience for people who were never going to get in
+anyway.
+
+## Site Stats now fully hidden for non-admins, reversing the last decision
+
+Same pattern as Moderation Queue and Verification Requests now — the
+link itself is hidden by default and only revealed once signed in as
+admin. The instant-alert check from the previous round is kept in place
+as a harmless extra layer, but with the link hidden, a non-admin
+shouldn't ever actually encounter it in normal use.
+
+## Scam detection extended into chat — the real gap behind a scam that got through
+
+Directly prompted by a real scam that Roost's existing detection missed
+entirely, only caught later on Craigslist. Traced the actual reason
+rather than assuming: the feature only ever scanned the listing
+description box while a seller was writing a post — it had zero
+connection to the messaging system, where this specific scam actually
+happened. Even where it did run, the keyword list was narrow (missed
+Zelle, PayPal F&F, cashier's checks, deposit requests, and more), and —
+the most important gap — it only ever showed a note to whoever was
+*typing*, never to the person actually receiving a risky message.
+
+**Three real fixes, not one:**
+
+1. **Expanded the keyword list** to cover realistic scam phrasing
+   actually used in the wild (deposit requests, Zelle/PayPal F&F,
+   cashier's checks, "my shipper will contact you," claims of being
+   deployed/overseas, crypto payment requests), not just the original
+   narrow list.
+2. **Wired the same check into both chat compose boxes** (starting a new
+   conversation, and replying within an existing one) — previously this
+   only ever ran on the listing description field.
+3. **Added a genuinely new, more important check: incoming messages are
+   now scanned too**, and a clear warning appears directly on any message
+   *from the other person* that contains risky language — this is the
+   piece that actually protects a buyer, since a warning shown only to
+   whoever sent a scam message does nothing to warn the person reading it.
+
+All three share one function (`containsScamLanguage`) instead of four
+separately-maintained copies of the same logic.
+
+**Honest limitation, tested directly rather than assumed away**: this
+remains a keyword match, not real understanding. Confirmed it correctly
+catches phrasing close to the real incident ("send a deposit to hold
+him"), correctly leaves a normal legitimate message alone, and
+confirmed — rather than hid — that a sufficiently vague rewording
+("just send the funds over first") still slips through. This is a real
+speed bump for common, recognizable scam patterns, not a guarantee
+against a determined, creative scammer.
+
+## Links blocked from chat messages entirely
+
+Real, well-scoped request: no URLs of any kind in chat, closing off a
+common way scammers direct people to phishing pages or off-platform
+payment requests.
+
+Enforced in two layers, same discipline as everywhere else in this app:
+
+- **Server-side (the real enforcement)** — both message-sending routes
+  (starting a new conversation, and replying within one) now reject any
+  message containing a link with a clear error, before it's ever saved.
+- **Client-side (instant feedback)** — both compose boxes block sending
+  immediately, without waiting on a round-trip to the server, using the
+  identical detection logic duplicated into the browser (same reasoning
+  as the earlier "USA" address-suffix fix — the browser can't `require()`
+  the backend's utility file directly).
+
+**The detection pattern was tested carefully before shipping, not just
+assumed to be safe.** It requires an explicit `http://` / `https://` /
+`www.` prefix, or a real common top-level domain (`.com`, `.net`, `.org`,
+etc.) — deliberately not just "any two words with a period between them."
+Confirmed it catches real URLs in every common form people actually paste
+or type them, and confirmed it does *not* false-positive on ordinary
+bird-marketplace messages: ages like "3.5 months," prices, or plain
+sentences with periods all pass through untouched.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

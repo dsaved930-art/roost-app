@@ -27,7 +27,31 @@ const CATEGORIES = [
   { code: 'SFT', label: 'Softbills', color: 'var(--sft)', dark: 'var(--sft-dark)', icon: '🍇' },
   { code: 'OTH', label: 'Other', color: 'var(--oth)', dark: 'var(--oth-dark2)', icon: '🐦' },
 ];
-const SCAM_PATTERNS = ['wire transfer', 'western union', 'money gram', 'moneygram', 'gift card', 'ship without meeting', 'shipping only', 'cashapp only', 'venmo only', 'no meeting'];
+// Deliberately broad, but this is still just a keyword list — it catches
+// common, recognizable scam phrasing, not every possible rewording a
+// determined scammer might use. It's a real speed bump, not a guarantee.
+const SCAM_PATTERNS = [
+  'wire transfer', 'western union', 'money gram', 'moneygram', 'gift card',
+  'ship without meeting', 'shipping only', 'cashapp only', 'venmo only',
+  'zelle only', 'chime only', 'apple pay only', 'no meeting',
+  'paypal friends and family', 'paypal f&f', 'friends and family only',
+  "cashier's check", 'cashiers check', 'money order',
+  'non-refundable deposit', 'deposit to hold', 'deposit first', 'pay a deposit',
+  'currently deployed', 'currently overseas', 'out of the country right now',
+  'my shipper', 'my agent will', 'shipping agent', 'crypto', 'bitcoin'
+];
+function containsScamLanguage(text) {
+  const lower = String(text || '').toLowerCase();
+  return SCAM_PATTERNS.some(p => lower.includes(p));
+}
+// Same regex as utils/linkDetection.js on the backend — duplicated
+// deliberately, since the browser can't require() that file directly.
+// This is for instant feedback before sending; the server-side copy is
+// the real enforcement, since a client-side-only check could be bypassed.
+const URL_PATTERN = /(https?:\/\/|www\.)\S+|\b[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.(com|net|org|io|co|info|biz|us|shop|site|me|app)\b/i;
+function containsUrl(text) {
+  return URL_PATTERN.test(String(text || ''));
+}
 
 function catInfo(code) { return CATEGORIES.find(c => c.code === code) || CATEGORIES[CATEGORIES.length - 1]; }
 
@@ -153,6 +177,13 @@ async function loadListings() {
     return;
   }
   applyFilters();
+  if (savedBrowseScrollY != null) {
+    // Restored only after the grid has real content again — restoring
+    // scroll before that would just scroll to nothing, since the "Loading
+    // listings…" placeholder is far shorter than the real page.
+    window.scrollTo(0, savedBrowseScrollY);
+    savedBrowseScrollY = null;
+  }
 }
 
 function applyFilters() {
@@ -427,7 +458,9 @@ async function renderListingPage(id) {
 // The main entry point used everywhere in the app to go to a listing.
 // Gives it a real URL (shareable, bookmarkable, works with browser back/forward)
 // instead of popping a modal over the current view.
+let savedBrowseScrollY = null;
 function openDetail(id) {
+  savedBrowseScrollY = window.scrollY; // remembered so "back to browse" can restore it, instead of always landing back at the top
   const url = '/listing/' + id;
   if (window.location.pathname !== url) {
     window.history.pushState({ listingId: id }, '', url);
@@ -581,7 +614,7 @@ document.getElementById('clear-location').addEventListener('click', () => {
   applyFilters();
 });
 
-document.getElementById('tab-browse').addEventListener('click', () => switchView('browse'));
+document.getElementById('tab-browse').addEventListener('click', () => { savedBrowseScrollY = null; switchView('browse'); });
 document.getElementById('tab-post').addEventListener('click', () => {
   if (!currentUser) { openAuthModal('signup', () => switchView('post')); return; }
   if (editingListingId) resetPostForm(); // don't let a stale edit silently overwrite the wrong listing
@@ -625,14 +658,13 @@ document.getElementById('listing-back').addEventListener('click', () => {
 document.getElementById('brand-home-link').addEventListener('click', (e) => {
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
   e.preventDefault();
+  savedBrowseScrollY = null; // clicking the logo is a fresh start, not "go back" — shouldn't restore an old scroll position
   window.history.pushState({}, '', '/');
   switchView('browse');
 });
 
 document.getElementById('f-desc').addEventListener('input', (e) => {
-  const text = e.target.value.toLowerCase();
-  const hit = SCAM_PATTERNS.some(p => text.includes(p));
-  document.getElementById('scam-warning').classList.toggle('show', hit);
+  document.getElementById('scam-warning').classList.toggle('show', containsScamLanguage(e.target.value));
 });
 document.getElementById('f-free').addEventListener('change', (e) => {
   document.getElementById('f-price').disabled = e.target.checked;
@@ -1138,6 +1170,7 @@ async function refreshCurrentUser() {
 // ===================== MODERATION (real server-enforced admin check) =====================
 function updateModLinkVisibility() {
   document.getElementById('footer-modqueue').style.display = isAdmin() ? 'inline' : 'none';
+  document.getElementById('footer-stats').style.display = isAdmin() ? 'inline' : 'none';
   document.getElementById('footer-verifqueue').style.display = isAdmin() ? 'inline' : 'none';
 }
 
@@ -1261,7 +1294,11 @@ async function openStats() {
     body.innerHTML = `<div class="empty" style="padding:30px 10px;">${e.status === 403 ? 'Admin access required.' : 'Could not load stats.'}</div>`;
   }
 }
-document.getElementById('footer-stats').addEventListener('click', (e) => { e.preventDefault(); openStats(); });
+document.getElementById('footer-stats').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!isAdmin()) { alert('You do not have access to this page.'); return; }
+  openStats();
+});
 
 // Admin coordinate-backfill tool. Runs entirely in the browser — the
 // Google key is domain-restricted, which only real browser requests
@@ -1528,16 +1565,21 @@ function showInlineCompose(listingId) {
   const wrap = document.getElementById('inline-compose-wrap');
   wrap.innerHTML = `
     <div class="compose-inline">
+      <div id="inline-compose-scam-warning" class="warn-banner">A quick safety check: messages that mention wiring money, gift cards, or shipping without meeting in person are common scam patterns. If that's not what you meant, feel free to ignore this.</div>
       <textarea id="inline-compose-text" rows="3" placeholder="Introduce yourself and ask about this bird…"></textarea>
       <div id="inline-compose-error" class="auth-error"></div>
       <button class="primary" id="inline-compose-send">Send message</button>
     </div>
   `;
+  document.getElementById('inline-compose-text').addEventListener('input', (e) => {
+    document.getElementById('inline-compose-scam-warning').classList.toggle('show', containsScamLanguage(e.target.value));
+  });
   document.getElementById('inline-compose-send').addEventListener('click', async () => {
     const text = document.getElementById('inline-compose-text').value.trim();
     const errEl = document.getElementById('inline-compose-error');
     errEl.textContent = '';
     if (!text) { errEl.textContent = 'Write a message first.'; return; }
+    if (containsUrl(text)) { errEl.textContent = 'Links aren\'t allowed in messages — this helps keep everyone safe from off-platform scams.'; return; }
     const btn = document.getElementById('inline-compose-send');
     btn.disabled = true; btn.textContent = 'Sending…';
     try {
@@ -1628,7 +1670,15 @@ async function openThread(conversationId) {
       msgsWrap.innerHTML = data.messages.map(m => {
         const mine = m.senderId === currentUser.id;
         const time = new Date(m.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-        return `<div class="msg-bubble ${mine ? 'msg-mine' : 'msg-theirs'}">${escapeHtml(m.body)}<div class="msg-time">${mine ? 'You' : escapeHtml(m.senderName)} · ${time}</div></div>`;
+        // Deliberately checked only on messages from the OTHER person, not
+        // your own — a warning shown to whoever sent a risky message does
+        // nothing to protect the person reading it, which is the actual
+        // point of this feature.
+        const flagged = !mine && containsScamLanguage(m.body);
+        const warningHtml = flagged
+          ? `<div class="msg-scam-warning">⚠️ This message mentions something common in online scams (wiring money, gift cards, shipping without meeting, etc). Never send money before meeting in person and seeing the bird.</div>`
+          : '';
+        return `${warningHtml}<div class="msg-bubble ${mine ? 'msg-mine' : 'msg-theirs'}">${escapeHtml(m.body)}<div class="msg-time">${mine ? 'You' : escapeHtml(m.senderName)} · ${time}</div></div>`;
       }).join('');
     }
     msgsWrap.scrollTop = msgsWrap.scrollHeight;
@@ -1636,9 +1686,14 @@ async function openThread(conversationId) {
     const sendBtn = document.getElementById('thread-send');
     const input = document.getElementById('thread-input');
     input.value = '';
+    document.getElementById('thread-scam-warning').classList.remove('show');
+    input.oninput = () => {
+      document.getElementById('thread-scam-warning').classList.toggle('show', containsScamLanguage(input.value));
+    };
     sendBtn.onclick = async () => {
       const text = input.value.trim();
       if (!text) return;
+      if (containsUrl(text)) { showToast('Links aren\'t allowed in messages — this helps keep everyone safe.'); return; }
       sendBtn.disabled = true;
       try {
         await api('/conversations/' + conversationId + '/messages', { method: 'POST', body: JSON.stringify({ body: text }) });
