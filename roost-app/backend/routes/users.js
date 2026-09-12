@@ -29,7 +29,7 @@ router.get('/:id/profile', async (req, res) => {
     const publicReviews = reviewsResult.rows.map(r => ({ ...r, reviewerName: publicDisplayName(r.reviewerName) }));
 
     const listingsResult = await pool.query(
-      `SELECT id, title, category, breed, free, price, city, state, photo_thumb AS "photoUrl", created_at AS "createdAt"
+      `SELECT id, title, category, breed, free, price, price_type AS "priceType", city, state, photo_thumb AS "photoUrl", created_at AS "createdAt"
        FROM listings WHERE posted_by = $1 ORDER BY created_at DESC LIMIT 12`,
       [user.id]
     );

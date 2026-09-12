@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS listings (
   sex            TEXT,
   free           BOOLEAN NOT NULL DEFAULT FALSE,
   price          NUMERIC NOT NULL DEFAULT 0,
+  price_type     TEXT NOT NULL DEFAULT 'each', -- 'each' or 'total' — clarifies what the price actually covers when multiple birds are listed together
   open_to_trade  BOOLEAN NOT NULL DEFAULT FALSE,
   city           TEXT NOT NULL,
   state          TEXT NOT NULL,
@@ -168,6 +169,7 @@ CREATE INDEX IF NOT EXISTS idx_saved_search_matches_search ON saved_search_match
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS photo_thumb_backup TEXT;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT 'each';
 ALTER TABLE listing_photos ADD COLUMN IF NOT EXISTS photo_thumb_backup TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'none';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_business_name TEXT;

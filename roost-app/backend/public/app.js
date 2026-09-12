@@ -54,6 +54,13 @@ function containsUrl(text) {
 }
 
 function catInfo(code) { return CATEGORIES.find(c => c.code === code) || CATEGORIES[CATEGORIES.length - 1]; }
+// Clarifies whether a price covers one bird or the whole group — shown
+// explicitly both ways (not just for the "total" case) since a buyer can
+// misread either direction if it's left to guesswork.
+function formatPriceDisplay(l, freeLabel) {
+  if (l.free) return freeLabel || 'Free';
+  return '$' + l.price + (l.priceType === 'total' ? ' for all' : ' each');
+}
 
 const STAR_PATH = 'M12 2l2.9 6.26L21 9.27l-4.5 4.4L17.8 21 12 17.77 6.2 21l1.3-7.33L3 9.27l6.1-1.01L12 2z';
 function starIconSvg(size) {
@@ -263,7 +270,7 @@ function renderGrid(results) {
       <div class="card-body">
         <div class="card-title-row"><h3>${escapeHtml(l.title)}</h3>${l.sellerVerified ? verifiedBadgeHtml('inline') : ''}</div>
         <div class="card-meta">${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}${(l._distanceMiles != null) ? ` · <span class="distance-tag">${formatDistance(l._distanceMiles)}</span>` : ''}</div>
-        <div class="card-price">${l.free ? 'Free' : '$' + l.price}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
+        <div class="card-price">${formatPriceDisplay(l)}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
       </div>
     </a>`;
   }).join('');
@@ -372,7 +379,7 @@ function buildListingPageHtml(l) {
       <div class="thumb-img-wrap">${photos.length > 0 ? `<img id="lp-main-img" src="${escapeAttr(photos[0].full)}" alt="" onerror="this.parentElement.innerHTML='${c.icon}'">` : c.icon}</div>
     </div>
     ${thumbStripHtml}
-    <div class="lp-price">${l.status === 'sold' ? '<span class="sold-badge">SOLD</span> ' : l.status === 'pending' ? '<span class="pending-badge">PENDING</span> ' : ''}${l.free ? 'Free to a good home' : '$' + l.price}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
+    <div class="lp-price">${l.status === 'sold' ? '<span class="sold-badge">SOLD</span> ' : l.status === 'pending' ? '<span class="pending-badge">PENDING</span> ' : ''}${formatPriceDisplay(l, 'Free to a good home')}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
     ${sellerLineHtml}
     ${buildDetailsBlockHtml(l)}
     <div class="lp-desc">${escapeHtml(l.description)}</div>
@@ -863,6 +870,7 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
     openToTrade: document.getElementById('f-trade').checked,
     shippingAvailable: document.getElementById('f-shipping').checked,
     price: document.getElementById('f-price').value,
+    priceType: document.querySelector('input[name="f-price-type"]:checked').value,
     city: document.getElementById('f-city').value.trim(),
     state: document.getElementById('f-state').value.trim().toUpperCase(),
     description: document.getElementById('f-desc').value.trim(),
@@ -943,6 +951,7 @@ function resetPostForm() {
   document.getElementById('f-trade').checked = false;
   document.getElementById('f-shipping').checked = false;
   document.getElementById('f-price').disabled = false;
+  document.getElementById('f-price-type-each').checked = true;
   document.getElementById('f-attest').checked = false;
   document.getElementById('f-agree-terms').checked = false;
   document.getElementById('permit-field-group').style.display = 'none';
@@ -1186,7 +1195,7 @@ async function openModerationQueue() {
       <div class="mod-item" data-mod-id="${l.id}">
         <div class="mod-count">${l.reportCount} report${l.reportCount === 1 ? '' : 's'}</div>
         <div class="mod-title">${escapeHtml(l.title)}</div>
-        <div class="mod-meta">${escapeHtml(catInfo(l.category).label)} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)} · ${l.free ? 'Free' : '$' + l.price}</div>
+        <div class="mod-meta">${escapeHtml(catInfo(l.category).label)} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)} · ${formatPriceDisplay(l)}</div>
         <div class="mod-actions">
           <button class="secondary mod-view-btn" data-id="${l.id}">View listing</button>
           <button class="primary mod-remove-btn" data-id="${l.id}" style="background:var(--rust-dark);">Remove listing</button>
@@ -1806,7 +1815,7 @@ async function openSellerProfile(sellerId) {
             <div class="smc-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
             <div class="smc-body">
               <div class="smc-title">${escapeHtml(l.title)}</div>
-              <div class="smc-price">${l.free ? 'Free' : '$' + l.price}</div>
+              <div class="smc-price">${formatPriceDisplay(l)}</div>
             </div>
           </div>`;
         }).join('')}</div>`;
@@ -1880,7 +1889,7 @@ async function loadMyListings() {
       <div class="myl-item ${l.status === 'sold' ? 'myl-sold' : ''}" data-id="${l.id}">
         <div class="myl-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
         <div class="myl-info">
-          <div class="myl-title">${statusBadge}${escapeHtml(l.title)} — ${l.free ? 'Free' : '$' + l.price}</div>
+          <div class="myl-title">${statusBadge}${escapeHtml(l.title)} — ${formatPriceDisplay(l)}</div>
           <div class="myl-meta">Posted ${when} · ${escapeHtml(catInfo(l.category).label)}</div>
           <div class="myl-stats">
             <span class="myl-stat">${statIconSvg(EYE_PATH_1, 13)} ${l.viewCount} view${l.viewCount === 1 ? '' : 's'}</span>
@@ -1959,6 +1968,7 @@ async function duplicateListing(id) {
     document.getElementById('f-hand-tame').value = l.handTame || 'unknown';
     document.getElementById('f-free').checked = !!l.free;
     document.getElementById('f-price').value = l.free ? '' : l.price;
+    document.querySelector(`input[name="f-price-type"][value="${l.priceType === 'total' ? 'total' : 'each'}"]`).checked = true;
     document.getElementById('f-price').disabled = !!l.free;
     document.getElementById('f-trade').checked = !!l.openToTrade;
     document.getElementById('f-shipping').checked = !!l.shippingAvailable;
@@ -2006,6 +2016,7 @@ async function editListing(id) {
     document.getElementById('f-hand-tame').value = l.handTame || 'unknown';
     document.getElementById('f-free').checked = !!l.free;
     document.getElementById('f-price').value = l.free ? '' : l.price;
+    document.querySelector(`input[name="f-price-type"][value="${l.priceType === 'total' ? 'total' : 'each'}"]`).checked = true;
     document.getElementById('f-price').disabled = !!l.free;
     document.getElementById('f-trade').checked = !!l.openToTrade;
     document.getElementById('f-shipping').checked = !!l.shippingAvailable;
@@ -2391,7 +2402,7 @@ async function loadRecentlySold() {
         <div class="rs-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
         <div class="rs-body">
           <div class="rs-name">${escapeHtml(l.title)}</div>
-          <div class="rs-price">${l.free ? 'Free' : '$' + l.price}</div>
+          <div class="rs-price">${formatPriceDisplay(l)}</div>
           <div class="rs-when">Sold ${relativeTime(l.soldAt)}</div>
         </div>
       </a>`;

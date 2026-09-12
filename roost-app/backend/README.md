@@ -1356,6 +1356,35 @@ or type them, and confirmed it does *not* false-positive on ordinary
 bird-marketplace messages: ages like "3.5 months," prices, or plain
 sentences with periods all pass through untouched.
 
+## Price clarity: per bird vs. for all of them
+
+Real, observed gap — some sellers post multiple birds together with a
+single price, and it's genuinely ambiguous whether that price covers one
+bird or the whole group. Fixed with a simple, explicit choice rather
+than a bigger overhaul: a new toggle right under Price on the post form
+— "Per bird" or "For all of them together" — defaulting to "Per bird"
+since that's the far more common case.
+
+**Deliberately shown both ways, not just for the "total" case** — a
+buyer can misread either direction if it's left to guesswork, so every
+price now reads as "$X each" or "$X for all" rather than a bare number.
+
+**Zero visual change for any existing listing.** The new database column
+defaults to `'each'` for every row that predates this feature, so old
+listings display exactly as they always have — nothing silently changed
+underneath anyone's existing posts.
+
+One shared `formatPriceDisplay()` function is used everywhere a price
+shows — the browse grid, the listing detail page, My Listings, the
+public seller profile, the Recently Sold strip, and the admin moderation
+queue — so all six places stay in sync automatically rather than risking
+six separately-maintained copies of the same logic drifting apart later.
+
+**This update includes a real schema change** — a new column on
+`listings` — so the deploy needs the migration step (temporarily running
+`npm run migrate && npm start`), same as previous schema-changing
+rounds.
+
 ## What's still not done
 
 This backend is functionally real, but production-hardening it further would include:

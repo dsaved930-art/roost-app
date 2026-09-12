@@ -166,6 +166,8 @@
   .field textarea{resize:vertical;min-height:100px;}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
   .free-toggle{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;}
+  .price-type-toggle{display:flex;gap:16px;margin-top:8px;font-size:13px;color:var(--muted);}
+  .price-type-option{display:flex;align-items:center;gap:5px;font-weight:400;cursor:pointer;}
   .checkbox-field{display:flex;gap:10px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;font-size:13px;line-height:1.5;}
   .checkbox-field input{margin-top:2px;}
   .species-list-box{background:#FBEFE7;border:1px solid var(--rust);border-radius:8px;padding:14px 16px;}

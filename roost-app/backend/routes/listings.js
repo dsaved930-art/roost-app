@@ -14,7 +14,7 @@ const { geocodeCityState } = require('../utils/geocode');
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT l.id, l.title, l.category, l.breed, l.age, l.sex, l.free, l.price, l.open_to_trade AS "openToTrade", l.city, l.state,
+      `SELECT l.id, l.title, l.category, l.breed, l.age, l.sex, l.free, l.price, l.price_type AS "priceType", l.open_to_trade AS "openToTrade", l.city, l.state,
               l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.lat, l.lon,
               l.status, l.shipping_available AS "shippingAvailable",
               COALESCE(u.verification_status = 'verified', FALSE) AS "sellerVerified"
@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
 router.get('/sold', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, title, category, free, price, city, state, photo_thumb AS "photoUrl", sold_at AS "soldAt"
+      `SELECT id, title, category, free, price, price_type AS "priceType", city, state, photo_thumb AS "photoUrl", sold_at AS "soldAt"
        FROM listings
        WHERE status = 'sold'
        ORDER BY sold_at DESC
@@ -55,7 +55,7 @@ router.get('/sold', async (req, res) => {
 router.get('/mine', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT l.id, l.title, l.category, l.free, l.price, l.city, l.state, l.status, l.sold_at AS "soldAt",
+      `SELECT l.id, l.title, l.category, l.free, l.price, l.price_type AS "priceType", l.city, l.state, l.status, l.sold_at AS "soldAt",
               l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.view_count AS "viewCount",
               (SELECT COUNT(DISTINCT buyer_id)::int FROM conversations WHERE listing_id = l.id) AS "conversationCount",
               (SELECT COUNT(*)::int FROM saved_search_matches WHERE listing_id = l.id) AS "alertMatches"
@@ -179,14 +179,14 @@ router.post('/', requireAuth, async (req, res) => {
       `INSERT INTO listings
         (title, category, breed, age, sex, free, price, open_to_trade, city, state, description,
          photo_thumb, photo_full, permit_number, poster_name, contact_method, contact_value, posted_by,
-         dna_sexed, hand_tame, shipping_available)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+         dna_sexed, hand_tame, shipping_available, price_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
        RETURNING *`,
       [
         b.title, b.category, b.breed || '', b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
         b.city, b.state, b.description, coverThumb, coverFull,
         b.category === 'RAP' ? b.permitNumber : null, posterName, b.contactMethod, b.contactValue, req.user.id,
-        dnaSexed, handTame, !!b.shippingAvailable
+        dnaSexed, handTame, !!b.shippingAvailable, (b.priceType === 'total' ? 'total' : 'each')
       ]
     );
     const newListing = inserted.rows[0];
@@ -283,14 +283,14 @@ router.put('/:id', requireAuth, async (req, res) => {
          title = $1, category = $2, breed = $3, age = $4, sex = $5, free = $6, price = $7, open_to_trade = $8,
          city = $9, state = $10, description = $11, photo_thumb = $12, photo_full = $13, permit_number = $14,
          poster_name = $15, contact_method = $16, contact_value = $17, dna_sexed = $18, hand_tame = $19,
-         shipping_available = $20
-       WHERE id = $21
+         shipping_available = $20, price_type = $21
+       WHERE id = $22
        RETURNING *`,
       [
         b.title, b.category, b.breed || '', b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
         b.city, b.state, b.description, coverThumb, coverFull,
         b.category === 'RAP' ? b.permitNumber : null, posterName, b.contactMethod, b.contactValue,
-        dnaSexed, handTame, !!b.shippingAvailable, req.params.id
+        dnaSexed, handTame, !!b.shippingAvailable, (b.priceType === 'total' ? 'total' : 'each'), req.params.id
       ]
     );
     const listing = updated.rows[0];
