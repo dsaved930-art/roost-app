@@ -1,0 +1,9 @@
+# Dependencies — reproducible via `npm install`, never committed
+node_modules/
+
+# Environment variables — contains real secrets (DB connection string, JWT signing key)
+.env
+.env.local
+
+# OS files
+.DS_Store
