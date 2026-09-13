@@ -289,10 +289,11 @@ function renderGrid(results) {
   const grid = document.getElementById('listings-grid');
   document.getElementById('count-line').textContent = `${results.length} listing${results.length === 1 ? '' : 's'}`;
   if (results.length === 0) {
+    const isSupplies = currentCategory === 'SUP';
     grid.innerHTML = `<div class="empty" style="grid-column:1/-1;">
-      <h3>No birds match yet</h3>
+      <h3>${isSupplies ? 'No supplies match yet' : 'No birds match yet'}</h3>
       <p>Try a different category or search term — or be the first to post.</p>
-      <button class="primary" onclick="document.getElementById('tab-post').click()">Post a bird</button>
+      <button class="primary" onclick="openPostForm(${isSupplies ? "'SUP'" : ''})">${isSupplies ? 'Post supplies' : 'Post a bird'}</button>
     </div>`;
     return;
   }
