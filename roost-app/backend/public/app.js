@@ -26,7 +26,10 @@ const CATEGORIES = [
   { code: 'RAP', label: 'Birds of prey / raptors', color: 'var(--rap)', dark: 'var(--rap-dark)', icon: '🦅' },
   { code: 'SFT', label: 'Softbills', color: 'var(--sft)', dark: 'var(--sft-dark)', icon: '🍇' },
   { code: 'OTH', label: 'Other', color: 'var(--oth)', dark: 'var(--oth-dark2)', icon: '🐦' },
+  { code: 'SUP', label: 'Supplies & equipment', color: 'var(--sup)', dark: 'var(--sup-dark)', icon: '🧰' },
 ];
+const CONDITION_LABELS = { new: 'New', used_like_new: 'Used – like new', used_good: 'Used – good', needs_repair: 'Used – needs repair' };
+function conditionLabel(code) { return CONDITION_LABELS[code] || 'Condition not specified'; }
 // Deliberately broad, but this is still just a keyword list — it catches
 // common, recognizable scam phrasing, not every possible rewording a
 // determined scammer might use. It's a real speed bump, not a guarantee.
@@ -146,11 +149,47 @@ function renderChips() {
 function populateCategorySelect() {
   const sel = document.getElementById('f-category');
   sel.innerHTML = CATEGORIES.map(c => `<option value="${c.code}">${c.label}</option>`).join('');
-  sel.addEventListener('change', () => {
-    const group = document.getElementById('permit-field-group');
-    if (sel.value === 'RAP') { group.style.display = 'block'; }
-    else { group.style.display = 'none'; document.getElementById('f-permit').value = ''; }
-  });
+  sel.addEventListener('change', updatePostFormForCategory);
+}
+
+// Reshapes the post form around whichever category is selected — the same
+// show/hide approach already used for the raptor permit field, extended so
+// Supplies & equipment gets its own relevant fields instead of the
+// live-animal-only ones (breed/age/sex/DNA/hand-tame, the captive-bred
+// attestation, the prohibited-species notice). One form, one "Post a bird"
+// entry point — this is what keeps that simple, instead of forking into a
+// second flow.
+function updatePostFormForCategory() {
+  const category = document.getElementById('f-category').value;
+  const isRaptor = category === 'RAP';
+  const isSupplies = category === 'SUP';
+
+  document.getElementById('permit-field-group').style.display = isRaptor ? 'block' : 'none';
+  if (!isRaptor) document.getElementById('f-permit').value = '';
+
+  document.getElementById('breed-field-group').style.display = isSupplies ? 'none' : 'block';
+  document.getElementById('category-breed-row').classList.toggle('single', isSupplies);
+  document.getElementById('age-sex-field-group').style.display = isSupplies ? 'none' : 'grid';
+  document.getElementById('dna-tame-field-group').style.display = isSupplies ? 'none' : 'grid';
+  document.getElementById('species-policy-field-group').style.display = isSupplies ? 'none' : 'block';
+  document.getElementById('attest-field-group').style.display = isSupplies ? 'none' : 'block';
+
+  document.getElementById('condition-field-group').style.display = isSupplies ? 'block' : 'none';
+  if (!isSupplies) document.getElementById('f-condition').value = '';
+
+  document.getElementById('post-view-title').textContent = isSupplies ? 'Post supplies or equipment' : 'Post a bird';
+  document.getElementById('post-view-subtitle').textContent = isSupplies
+    ? 'Cages, incubators, brooders, nest boxes, feed, and other bird-keeping supplies & equipment, etc. Listing and contact details will be visible to everyone who visits Roost.'
+    : 'Your listing and contact details will be visible to everyone who visits Roost.';
+
+  document.getElementById('f-title').placeholder = isSupplies
+    ? 'Large flight cage, barely used'
+    : 'Hand-raised cockatiel pair, 1 year old';
+  document.getElementById('f-desc').placeholder = isSupplies
+    ? "Tell buyers about size/dimensions, brand, any wear or damage, what's included, and why you're selling."
+    : "Tell buyers about temperament, diet, cage setup, health history, why you're rehoming, etc.";
+  document.getElementById('f-price-type-each-label').textContent = isSupplies ? 'Per item' : 'Per bird';
+  document.getElementById('f-free-label').textContent = isSupplies ? 'This item is free to whoever wants it' : 'This bird is free to a good home';
 }
 
 // ===================== BROWSE / FILTER =====================
@@ -259,6 +298,8 @@ function renderGrid(results) {
   }
   grid.innerHTML = results.map(l => {
     const c = catInfo(l.category);
+    const isSupplies = l.category === 'SUP';
+    const metaLead = isSupplies ? conditionLabel(l.condition) : `${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')}`;
     return `
     <a class="card" href="/listing/${l.id}" data-id="${l.id}">
       ${l.free ? '<div class="free-ribbon">FREE</div>' : ''}
@@ -269,7 +310,7 @@ function renderGrid(results) {
       </div>
       <div class="card-body">
         <div class="card-title-row"><h3>${escapeHtml(l.title)}</h3>${l.sellerVerified ? verifiedBadgeHtml('inline') : ''}</div>
-        <div class="card-meta">${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}${(l._distanceMiles != null) ? ` · <span class="distance-tag">${formatDistance(l._distanceMiles)}</span>` : ''}</div>
+        <div class="card-meta">${metaLead} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}${(l._distanceMiles != null) ? ` · <span class="distance-tag">${formatDistance(l._distanceMiles)}</span>` : ''}</div>
         <div class="card-price">${formatPriceDisplay(l)}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
       </div>
     </a>`;
@@ -305,6 +346,14 @@ function plainTraitRowHtml(iconEmoji, label, value) {
   return `<div class="trait-row"><span class="trait-label">${iconEmoji} ${label}:</span> <span class="trait-value">${escapeHtml(value) || '?'}</span></div>`;
 }
 function buildDetailsBlockHtml(l) {
+  if (l.category === 'SUP') {
+    return `
+      <div class="lp-details">
+        <div class="lp-details-title">Details</div>
+        ${plainTraitRowHtml('🏷️', 'Condition', conditionLabel(l.condition))}
+        ${traitRowHtml('🚚', 'Shipping available', l.shippingAvailable ? 'yes' : 'no')}
+      </div>`;
+  }
   return `
     <div class="lp-details">
       <div class="lp-details-title">Details</div>
@@ -372,7 +421,7 @@ function buildListingPageHtml(l) {
       </button>
     </div>
     <h1>${escapeHtml(l.title)}</h1>
-    <div class="lp-meta">${escapeHtml(l.breed)} ${l.sex ? '· ' + escapeHtml(l.sex) : ''} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}</div>
+    <div class="lp-meta">${l.category === 'SUP' ? conditionLabel(l.condition) : `${escapeHtml(l.breed)} ${l.sex ? '· ' + escapeHtml(l.sex) : ''}`} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}</div>
     ${permitLine}
     <div class="lp-photo" id="lp-main-photo">
       ${postTimeBadgeHtml(l.createdAt)}
@@ -523,7 +572,11 @@ document.getElementById('sidebar-close-mobile').addEventListener('click', () => 
 document.getElementById('sidebar-backdrop').addEventListener('click', () => setSidebarDrawerOpen(false));
 document.getElementById('sidebar-create-btn').addEventListener('click', () => {
   setSidebarDrawerOpen(false);
-  document.getElementById('tab-post').click();
+  openPostForm();
+});
+document.getElementById('sidebar-create-supplies-btn').addEventListener('click', () => {
+  setSidebarDrawerOpen(false);
+  openPostForm('SUP');
 });
 document.addEventListener('click', (e) => {
   const panel = document.getElementById('filter-panel');
@@ -622,12 +675,23 @@ document.getElementById('clear-location').addEventListener('click', () => {
 });
 
 document.getElementById('tab-browse').addEventListener('click', () => { savedBrowseScrollY = null; switchView('browse'); });
-document.getElementById('tab-post').addEventListener('click', () => {
-  if (!currentUser) { openAuthModal('signup', () => switchView('post')); return; }
+document.getElementById('tab-post').addEventListener('click', () => openPostForm());
+
+// Shared entry point for every "post a bird" / "post supplies" trigger on the
+// site, so there's exactly one place that handles auth-gating and form setup.
+// presetCategory (optional) selects a starting category once the form opens —
+// e.g. the "Have supplies to sell?" button passes 'SUP' — and survives a
+// sign-in detour via the auth modal's callback.
+function openPostForm(presetCategory) {
+  if (!currentUser) { openAuthModal('signup', () => openPostForm(presetCategory)); return; }
   if (editingListingId) resetPostForm(); // don't let a stale edit silently overwrite the wrong listing
   prefillPosterFields();
   switchView('post');
-});
+  if (presetCategory) {
+    document.getElementById('f-category').value = presetCategory;
+    document.getElementById('f-category').dispatchEvent(new Event('change'));
+  }
+}
 
 function prefillPosterFields() {
   if (!currentUser) return;
@@ -838,7 +902,7 @@ function clearAllPostFormErrors() {
   document.querySelectorAll('#post-form-wrap .field-error-msg').forEach(el => el.remove());
 }
 ['f-title', 'f-category', 'f-price', 'f-free', 'f-city', 'f-state', 'f-desc',
- 'f-contact-method', 'f-contact-value', 'f-permit', 'f-attest', 'f-agree-terms'].forEach(id => {
+ 'f-contact-method', 'f-contact-value', 'f-permit', 'f-condition', 'f-attest', 'f-agree-terms'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('input', () => clearFieldError(id));
   if (el) el.addEventListener('change', () => clearFieldError(id));
@@ -880,6 +944,7 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
     attested: document.getElementById('f-attest').checked,
     agreedTerms: document.getElementById('f-agree-terms').checked,
     permitNumber: document.getElementById('f-permit').value.trim(),
+    condition: document.getElementById('f-condition').value,
     lat: (() => { const c = getVerifiedCoords(selectedCityCoords, selectedCityCoordsText, 'f-city'); return c ? c.lat : null; })(),
     lon: (() => { const c = getVerifiedCoords(selectedCityCoords, selectedCityCoordsText, 'f-city'); return c ? c.lon : null; })(),
     photos: pendingPhotos
@@ -898,7 +963,10 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
   if (body.category === 'RAP' && !body.permitNumber) {
     problems.push({ fieldId: 'f-permit', message: 'A falconry/raptor permit number is required to list a bird of prey.' });
   }
-  if (!isEditing && !body.attested) {
+  if (body.category === 'SUP' && !body.condition) {
+    problems.push({ fieldId: 'f-condition', message: 'Please select the condition of the item.' });
+  }
+  if (!isEditing && body.category !== 'SUP' && !body.attested) {
     problems.push({ fieldId: 'f-attest', message: 'Please confirm the captive-bred and ownership attestation.' });
   }
   if (!isEditing && !body.agreedTerms) {
@@ -954,7 +1022,8 @@ function resetPostForm() {
   document.getElementById('f-price-type-each').checked = true;
   document.getElementById('f-attest').checked = false;
   document.getElementById('f-agree-terms').checked = false;
-  document.getElementById('permit-field-group').style.display = 'none';
+  document.getElementById('f-condition').value = '';
+  updatePostFormForCategory();
   document.getElementById('f-contact-method').value = 'Email';
   document.getElementById('f-contact-value').type = 'text';
   document.getElementById('f-contact-value').placeholder = 'you@email.com';
@@ -1980,6 +2049,7 @@ async function duplicateListing(id) {
     document.getElementById('f-contact-method').dispatchEvent(new Event('change'));
     document.getElementById('f-contact-value').value = l.contactValue || (currentUser ? currentUser.email : '');
     if (l.category === 'RAP' && l.permitNumber) document.getElementById('f-permit').value = l.permitNumber;
+    if (l.category === 'SUP' && l.condition) document.getElementById('f-condition').value = l.condition;
 
     if (Array.isArray(l.photos) && l.photos.length > 0) {
       pendingPhotos = l.photos.map(p => ({ thumb: p.thumb, full: p.full }));
@@ -2028,6 +2098,7 @@ async function editListing(id) {
     document.getElementById('f-contact-method').dispatchEvent(new Event('change'));
     document.getElementById('f-contact-value').value = l.contactValue || (currentUser ? currentUser.email : '');
     if (l.category === 'RAP' && l.permitNumber) document.getElementById('f-permit').value = l.permitNumber;
+    if (l.category === 'SUP' && l.condition) document.getElementById('f-condition').value = l.condition;
 
     if (Array.isArray(l.photos) && l.photos.length > 0) {
       pendingPhotos = l.photos.map(p => ({ thumb: p.thumb, full: p.full }));

@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS listings (
   hand_tame      TEXT NOT NULL DEFAULT 'unknown' CHECK (hand_tame IN ('yes','no','unknown')),
   shipping_available BOOLEAN NOT NULL DEFAULT FALSE,
   status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','pending','sold')),
+  condition      TEXT,             -- only meaningful for category = 'SUP' (Supplies & equipment); NULL for live bird listings
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -205,6 +206,11 @@ DO $$ BEGIN
   ALTER TABLE listings ADD CONSTRAINT listings_status_check CHECK (status IN ('active','pending','sold'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 UPDATE listings SET status = 'sold' WHERE sold = TRUE AND status != 'sold';
+
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS condition TEXT;
+DO $$ BEGIN
+  ALTER TABLE listings ADD CONSTRAINT listings_condition_check CHECK (condition IS NULL OR condition IN ('new','used_like_new','used_good','needs_repair'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS idx_users_verification_status ON users (verification_status);
 CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_token ON email_verification_tokens (token);

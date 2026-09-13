@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
     const result = await pool.query(
       `SELECT l.id, l.title, l.category, l.breed, l.age, l.sex, l.free, l.price, l.price_type AS "priceType", l.open_to_trade AS "openToTrade", l.city, l.state,
               l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.lat, l.lon,
-              l.status, l.shipping_available AS "shippingAvailable",
+              l.status, l.shipping_available AS "shippingAvailable", l.condition,
               COALESCE(u.verification_status = 'verified', FALSE) AS "sellerVerified"
        FROM listings l LEFT JOIN users u ON u.id = l.posted_by
        WHERE l.status != 'sold'
@@ -116,7 +116,7 @@ router.get('/:id', async (req, res) => {
       id: l.id, title: l.title, category: l.category, breed: l.breed, age: l.age, sex: l.sex,
       free: l.free, price: Number(l.price), openToTrade: l.open_to_trade, city: l.city, state: l.state, description: l.description,
       photoUrl: l.photo_thumb, photoFull: l.photo_full, photos, permitNumber: l.permit_number,
-      dnaSexed: l.dna_sexed, handTame: l.hand_tame,
+      dnaSexed: l.dna_sexed, handTame: l.hand_tame, condition: l.condition,
       createdAt: l.created_at, reportCount: reportsResult.rows[0].count,
       sold: l.status === 'sold', status: l.status, soldAt: l.sold_at, shippingAvailable: l.shipping_available,
       contactLocked: !req.user,
@@ -149,9 +149,13 @@ router.post('/', requireAuth, async (req, res) => {
     if (!b.free && (b.price === undefined || b.price === null || Number(b.price) < 0)) {
       return res.status(400).json({ error: 'Enter a price, or mark the listing free.' });
     }
-    if (!b.attested) return res.status(400).json({ error: 'Please confirm the captive-bred and ownership attestation.' });
+    // The captive-bred/ownership attestation is about live animals — it doesn't apply
+    // to secondhand equipment, so Supplies listings skip it rather than showing a
+    // checkbox that makes no sense for a cage or incubator.
+    if (b.category !== 'SUP' && !b.attested) return res.status(400).json({ error: 'Please confirm the captive-bred and ownership attestation.' });
     if (!b.agreedTerms) return res.status(400).json({ error: 'Please confirm you are 18+ and agree to the Terms of Service and Privacy Policy.' });
     if (b.category === 'RAP' && !b.permitNumber) return res.status(400).json({ error: 'A falconry/raptor permit number is required to list a bird of prey.' });
+    if (b.category === 'SUP' && !b.condition) return res.status(400).json({ error: 'Please select the condition of the item.' });
 
     const MAX_PHOTOS = 5;
     let photos = [];
@@ -174,19 +178,21 @@ router.post('/', requireAuth, async (req, res) => {
     const VALID_TRISTATE = ['yes', 'no', 'unknown'];
     const dnaSexed = VALID_TRISTATE.includes(b.dnaSexed) ? b.dnaSexed : 'unknown';
     const handTame = VALID_TRISTATE.includes(b.handTame) ? b.handTame : 'unknown';
+    const VALID_CONDITIONS = ['new', 'used_like_new', 'used_good', 'needs_repair'];
+    const condition = (b.category === 'SUP' && VALID_CONDITIONS.includes(b.condition)) ? b.condition : null;
 
     const inserted = await pool.query(
       `INSERT INTO listings
         (title, category, breed, age, sex, free, price, open_to_trade, city, state, description,
          photo_thumb, photo_full, permit_number, poster_name, contact_method, contact_value, posted_by,
-         dna_sexed, hand_tame, shipping_available, price_type)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+         dna_sexed, hand_tame, shipping_available, price_type, condition)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
        RETURNING *`,
       [
         b.title, b.category, b.breed || '', b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
         b.city, b.state, b.description, coverThumb, coverFull,
         b.category === 'RAP' ? b.permitNumber : null, posterName, b.contactMethod, b.contactValue, req.user.id,
-        dnaSexed, handTame, !!b.shippingAvailable, (b.priceType === 'total' ? 'total' : 'each')
+        dnaSexed, handTame, !!b.shippingAvailable, (b.priceType === 'total' ? 'total' : 'each'), condition
       ]
     );
     const newListing = inserted.rows[0];
@@ -264,6 +270,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Enter a price, or mark the listing free.' });
     }
     if (b.category === 'RAP' && !b.permitNumber) return res.status(400).json({ error: 'A falconry/raptor permit number is required to list a bird of prey.' });
+    if (b.category === 'SUP' && !b.condition) return res.status(400).json({ error: 'Please select the condition of the item.' });
 
     const MAX_PHOTOS = 5;
     let photos = [];
@@ -277,20 +284,22 @@ router.put('/:id', requireAuth, async (req, res) => {
     const VALID_TRISTATE = ['yes', 'no', 'unknown'];
     const dnaSexed = VALID_TRISTATE.includes(b.dnaSexed) ? b.dnaSexed : 'unknown';
     const handTame = VALID_TRISTATE.includes(b.handTame) ? b.handTame : 'unknown';
+    const VALID_CONDITIONS = ['new', 'used_like_new', 'used_good', 'needs_repair'];
+    const condition = (b.category === 'SUP' && VALID_CONDITIONS.includes(b.condition)) ? b.condition : null;
 
     const updated = await pool.query(
       `UPDATE listings SET
          title = $1, category = $2, breed = $3, age = $4, sex = $5, free = $6, price = $7, open_to_trade = $8,
          city = $9, state = $10, description = $11, photo_thumb = $12, photo_full = $13, permit_number = $14,
          poster_name = $15, contact_method = $16, contact_value = $17, dna_sexed = $18, hand_tame = $19,
-         shipping_available = $20, price_type = $21
-       WHERE id = $22
+         shipping_available = $20, price_type = $21, condition = $22
+       WHERE id = $23
        RETURNING *`,
       [
         b.title, b.category, b.breed || '', b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
         b.city, b.state, b.description, coverThumb, coverFull,
         b.category === 'RAP' ? b.permitNumber : null, posterName, b.contactMethod, b.contactValue,
-        dnaSexed, handTame, !!b.shippingAvailable, (b.priceType === 'total' ? 'total' : 'each'), req.params.id
+        dnaSexed, handTame, !!b.shippingAvailable, (b.priceType === 'total' ? 'total' : 'each'), condition, req.params.id
       ]
     );
     const listing = updated.rows[0];

@@ -36,8 +36,11 @@ function publicUrl() {
 
 const CATEGORY_LABELS = {
   FIN: 'Finches & canaries', PAR: 'Parrots', POU: 'Poultry & gamebirds',
-  DOV: 'Pigeons & doves', WTF: 'Waterfowl', RAP: 'Birds of prey / raptors', SFT: 'Softbills', OTH: 'Other'
+  DOV: 'Pigeons & doves', WTF: 'Waterfowl', RAP: 'Birds of prey / raptors', SFT: 'Softbills', OTH: 'Other',
+  SUP: 'Supplies & equipment'
 };
+const CONDITION_LABELS = { new: 'New', used_like_new: 'Used – like new', used_good: 'Used – good', needs_repair: 'Used – needs repair' };
+function conditionLabel(code) { return CONDITION_LABELS[code] || 'Condition not specified'; }
 
 // Builds the same visual markup the client renders (see buildListingPageHtml
 // in app.js) so there's no flash-of-different-content once JS takes over —
@@ -57,7 +60,7 @@ function staticListingHtml(l) {
   return `
     <div class="lp-band">${esc(categoryLabel)}</div>
     <h1>${esc(l.title)}</h1>
-    <div class="lp-meta">${esc(l.breed)} ${l.sex ? '· ' + esc(l.sex) : ''} · ${esc(l.city)}, ${esc(l.state)}</div>
+    <div class="lp-meta">${l.category === 'SUP' ? esc(conditionLabel(l.condition)) : `${esc(l.breed)} ${l.sex ? '· ' + esc(l.sex) : ''}`} · ${esc(l.city)}, ${esc(l.state)}</div>
     <div class="lp-photo">
       ${postTimeBadgeHtml(l.created_at)}
       ${photo ? `<img src="${escAttr(photo)}" alt="${escAttr(l.title)}">` : ''}
@@ -65,11 +68,16 @@ function staticListingHtml(l) {
     <div class="lp-price">${l.status === 'sold' ? '<span class="sold-badge">SOLD</span> ' : l.status === 'pending' ? '<span class="pending-badge">PENDING</span> ' : ''}${priceText}${l.open_to_trade ? ' · Open to trade' : ''}</div>
     <div class="lp-details">
       <div class="lp-details-title">Details</div>
-      ${ssrPlainTraitRow('🐦', 'Gender', l.sex)}
-      ${ssrPlainTraitRow('🎂', 'Age', l.age)}
-      ${ssrTraitRow('🧬', 'DNA sexed', l.dna_sexed)}
-      ${ssrTraitRow('🤝', 'Hand-tame', l.hand_tame)}
-      ${ssrTraitRow('🚚', 'Shipping available', l.shipping_available ? 'yes' : 'no')}
+      ${l.category === 'SUP' ? `
+        ${ssrPlainTraitRow('🏷️', 'Condition', conditionLabel(l.condition))}
+        ${ssrTraitRow('🚚', 'Shipping available', l.shipping_available ? 'yes' : 'no')}
+      ` : `
+        ${ssrPlainTraitRow('🐦', 'Gender', l.sex)}
+        ${ssrPlainTraitRow('🎂', 'Age', l.age)}
+        ${ssrTraitRow('🧬', 'DNA sexed', l.dna_sexed)}
+        ${ssrTraitRow('🤝', 'Hand-tame', l.hand_tame)}
+        ${ssrTraitRow('🚚', 'Shipping available', l.shipping_available ? 'yes' : 'no')}
+      `}
     </div>
     <div class="lp-desc">${esc(l.description)}</div>
   `;
