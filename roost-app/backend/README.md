@@ -72,70 +72,86 @@ You'll want to confirm this works on your own machine before deploying anywhere.
 
 ## 2. Deploy it for real
 
-**Recommended path: Render.** It's the least fiddly option for exactly this
-shape of app (one Node service + one Postgres database), and has a free tier
-for the database.
+**Current platform: DigitalOcean App Platform.** This is where the live site
+actually runs, and is the correct target to deploy to — not just one option
+among several. (See "Why not Render" below for how we ended up here.)
 
 1. Push this whole project (`backend/` and `frontend/`) to a GitHub repository.
 
-2. On [render.com](https://render.com):
-   - **New → PostgreSQL** — create a database, note the "Internal Database URL" it gives you.
-   - **New → Web Service** — connect your GitHub repo.
-     - Root directory: `backend`
+2. On the [DigitalOcean control panel](https://cloud.digitalocean.com/apps):
+   - **Create → Apps** — connect your GitHub repo.
+     - Source directory: `backend` (this is *why* `backend/public/` holds the
+       real frontend instead of a sibling `frontend/` folder — see the
+       top-level [README.md](../README.md) for the full explanation. App
+       Platform only deploys what's inside the configured source directory,
+       so anything outside `backend/` would go missing on this platform.)
      - Build command: `npm install`
-     - Start command: `npm start`
-   - Under the web service's **Environment** tab, add:
+     - Run command: `npm start`
+   - **Create → Database → PostgreSQL** (or attach an existing managed
+     Postgres cluster) and note its connection string.
+   - Under the app's **Settings → App-Level Environment Variables**, add:
      - `DATABASE_URL` = the connection string from the database you created
      - `JWT_SECRET` = a long random string (generate the same way as above)
      - `NODE_ENV` = `production`
-   - Deploy. Render will give you a URL like `https://roost-xyz.onrender.com`.
+   - Deploy. DigitalOcean will give you a URL like
+     `https://roost-xyz.ondigitalocean.app`.
 
 3. Run the migration once against your production database. The simplest way:
-   temporarily change the web service's start command to `npm run migrate && npm start`,
+   temporarily change the app's run command to `npm run migrate && npm start`,
    deploy once, then change it back to just `npm start`. (Or run `npm run migrate`
    from your own machine with `DATABASE_URL` pointed at the production database.)
 
 4. Make your admin account an admin in production the same way as step 5 above,
-   using Render's database dashboard SQL console this time instead of Neon/Supabase's.
+   using DigitalOcean's database dashboard SQL console this time instead of
+   Neon/Supabase's.
 
-**Alternatives that work the same way:** Railway and Fly.io both support this
-exact "Node service + Postgres" shape with a similar setup. Vercel is built
-around serverless functions and static frontends — it *can* run this, but it's
-a worse fit for a small always-on Express server with a database; Render/Railway
-will be less friction.
+**Other platforms:** Render, Railway, and Fly.io all support this same
+"Node service + Postgres" shape and would technically work — but DigitalOcean
+is the one this app is actually deployed to and tested against, so treat the
+others as untested alternatives, not equivalent options. Vercel is a poor fit
+regardless of the above, since it's built around serverless functions and
+static frontends rather than a small always-on Express server with a database.
 
 ## 3. Get a real domain (optional but recommended)
 
 Buy a domain from any registrar (Namecheap, Google Domains successor Squarespace
-Domains, Cloudflare Registrar). In Render's dashboard, under your web service's
-**Settings → Custom Domains**, add your domain and follow the DNS instructions
-it gives you (usually one CNAME record). Render handles HTTPS certificates
-automatically once DNS is pointed correctly.
+Domains, Cloudflare Registrar). In the DigitalOcean app's **Settings → Domains**,
+add your domain and follow the DNS instructions it gives you (usually one CNAME
+record). DigitalOcean handles HTTPS certificates automatically once DNS is
+pointed correctly.
+
+## Why not Render (history)
+
+Render was the original host, and this section used to recommend it. It's no
+longer used: Google's Safe Browsing flagged the Render-hosted domain with
+"tries to trick visitors into sharing personal info," and Render suspended
+the account shortly after — which is what triggered the migration to
+DigitalOcean in the first place. **DigitalOcean is the current, correct
+deployment target** — this history is kept only for context, not as a reason
+to consider Render again.
+
+The likely (not 100% certain) cause of the Safe Browsing flag: a "Sign in
+with Google" button redirecting to `accounts.google.com`, sitting on a
+randomly-generated free subdomain (`something.onrender.com`), is structurally
+very close to what real phishing kits look like to automated scanners — even
+though the OAuth flow itself was implemented correctly and legitimately. The
+scanner can't distinguish intent from that pattern alone.
 
 ## Google Sign-In (removed)
 
-Google Sign-In was built and briefly live, then removed after Google's Safe
-Browsing flagged the deployed domain with "tries to trick visitors into
-sharing personal info," and Render suspended the account shortly after.
+Because of the above, Google Sign-In was built, briefly live, then fully
+removed: the frontend button, the `/api/auth/google`,
+`/api/auth/google/callback`, and `/api/auth/google-status` routes, the
+`passport`/`passport-google-oauth20` dependencies from `package.json`, and
+(as of the cleanup that finished this removal) the `passport-setup.js` file
+itself, which had been left behind as dead code with no working dependencies
+after the initial removal. Email/password sign-up, sign-in, and password
+reset are unaffected — those never touched Google at all.
 
-The likely (not 100% certain) cause: a "Sign in with Google" button
-redirecting to `accounts.google.com`, sitting on a randomly-generated free
-subdomain (`something.onrender.com`), is structurally very close to what
-real phishing kits look like to automated scanners — even though the OAuth
-flow itself was implemented correctly and legitimately. The scanner can't
-distinguish intent from that pattern alone.
-
-All of it has been removed: the frontend button, the `/api/auth/google`,
-`/api/auth/google/callback`, and `/api/auth/google-status` routes,
-`passport-setup.js`, and the `passport`/`passport-google-oauth20`
-dependencies from `package.json`. Email/password sign-up, sign-in, and
-password reset are unaffected — those never touched Google at all.
-
-If you want to bring this back later, the safer path is: get the app onto
-your own custom domain first (not a shared `onrender.com`/`vercel.app`
-address), then re-add Google Sign-In against that domain. A domain you
-control and that's been live for a while carries a real trust history a
-brand-new auto-generated subdomain doesn't have.
+If you want to bring this back later, the safer path is: do it against the
+app's own custom domain (not a shared `ondigitalocean.app`/`onrender.com`/
+`vercel.app` address) — a domain you control and that's been live for a while
+carries a real trust history a brand-new auto-generated subdomain doesn't have.
 
 ## In-app messaging
 
