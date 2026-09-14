@@ -1818,11 +1818,22 @@ async function openThread(conversationId) {
       ? `<button class="secondary" id="rate-seller-btn" style="margin-top:8px;">★ Rate this seller</button>`
       : (conv.alreadyReviewed ? `<div class="rating-text" style="margin-top:8px;">✓ You reviewed this seller</div>` : '');
 
+    // Thumbnail + title are both one clickable link back to the actual
+    // listing — easy to lose track of which bird a thread is about once
+    // you're a few messages deep, especially across several conversations.
+    const listingLinkHtml = conv.listing ? `
+      <button class="th-listing-link" id="th-listing-link">
+        <div class="th-listing-thumb">${conv.listing.photoUrl ? `<img src="${escapeAttr(conv.listing.photoUrl)}" alt="">` : '🐦'}</div>
+        <div class="th-listing-title">${escapeHtml(conv.listing.title)}</div>
+      </button>` : `<div class="th-listing">Listing</div>`;
+
     document.getElementById('thread-header').innerHTML = `
-      <div class="th-listing">${escapeHtml(conv.listing ? conv.listing.title : 'Listing')}</div>
+      ${listingLinkHtml}
       <div class="th-with">Conversation about this listing</div>
       ${rateActionHtml}
     `;
+    const listingLinkBtn = document.getElementById('th-listing-link');
+    if (listingLinkBtn) listingLinkBtn.addEventListener('click', () => openDetail(conv.listing.id));
     const rateBtn = document.getElementById('rate-seller-btn');
     if (rateBtn) {
       rateBtn.addEventListener('click', () => openRateModal(conv.sellerId, conv.listing.id, conv.listing.title, conversationId));
