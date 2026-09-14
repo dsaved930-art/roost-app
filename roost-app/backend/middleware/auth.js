@@ -6,7 +6,7 @@ const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 
 function setAuthCookie(res, user) {
   const token = jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    { id: user.id, email: user.email, role: user.role, name: user.name },
     process.env.JWT_SECRET,
     { expiresIn: TOKEN_EXPIRY }
   );
