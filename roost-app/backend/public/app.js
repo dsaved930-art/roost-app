@@ -211,15 +211,40 @@ function distanceMilesClient(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// Playful, rotating captions for the browse grid's loading state — cycles
+// every couple seconds so a slower load doesn't just sit on static text.
+const BROWSE_LOADING_CAPTIONS = [
+  'Fetching the flock…', 'Herding listings into the nest…', 'Counting feathers…',
+  'Warming up the roost…', 'Rounding up birds and their people…'
+];
+let browseLoadingInterval = null;
+function showBrowseLoadingState() {
+  clearInterval(browseLoadingInterval);
+  document.getElementById('listings-grid').innerHTML = `
+    <div class="loading-state">
+      <div class="loading-bird" aria-hidden="true">🐦</div>
+      <div class="loading-text" id="browse-loading-text">${BROWSE_LOADING_CAPTIONS[0]}</div>
+    </div>`;
+  let i = 0;
+  browseLoadingInterval = setInterval(() => {
+    const el = document.getElementById('browse-loading-text');
+    if (!el) { clearInterval(browseLoadingInterval); return; } // real content already replaced it
+    i = (i + 1) % BROWSE_LOADING_CAPTIONS.length;
+    el.style.opacity = '0';
+    setTimeout(() => { el.textContent = BROWSE_LOADING_CAPTIONS[i]; el.style.opacity = '1'; }, 250);
+  }, 1700);
+}
+
 async function loadListings() {
   const grid = document.getElementById('listings-grid');
-  grid.innerHTML = `<div class="empty">Loading listings…</div>`;
+  showBrowseLoadingState();
   try {
     const data = await api('/listings');
     allListings = data.listings || [];
   } catch (e) {
     allListings = [];
-    grid.innerHTML = `<div class="empty">Couldn't load listings right now. <button class="secondary" onclick="loadListings()">Retry</button></div>`;
+    clearInterval(browseLoadingInterval);
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1;">Couldn't load listings right now. <button class="secondary" onclick="loadListings()">Retry</button></div>`;
     return;
   }
   applyFilters();
@@ -286,6 +311,7 @@ function applyFilters() {
 }
 
 function renderGrid(results) {
+  clearInterval(browseLoadingInterval);
   const grid = document.getElementById('listings-grid');
   document.getElementById('count-line').textContent = `${results.length} listing${results.length === 1 ? '' : 's'}`;
   if (results.length === 0) {
@@ -375,9 +401,18 @@ function buildListingPageHtml(l) {
     ? `<div class="meta-line">Permit on file: ${escapeHtml(l.permitNumber)}</div>` : '';
 
   const isOwnListing = currentUser && l.postedByMe;
-  const messageBtnHtml = isOwnListing ? '' : (currentUser
-    ? `<button class="primary" id="message-seller-btn" style="width:100%;margin-bottom:10px;">Message seller</button>`
-    : `<button class="primary" id="message-seller-btn" style="width:100%;margin-bottom:10px;">Sign in to message seller</button>`);
+  // Always visible (not a popup gated behind a button) — signed-out visitors can type
+  // a message immediately too; signing in is only asked for at send time, in wireSellerCompose.
+  const sellerComposeHtml = isOwnListing ? '' : `
+    <div class="seller-compose" id="seller-compose">
+      <div class="seller-compose-label">Message seller</div>
+      <div class="seller-compose-row">
+        <input type="text" id="inline-compose-text" maxlength="2000" placeholder="${l.category === 'SUP' ? 'Ask about this item…' : 'Introduce yourself and ask about this bird…'}">
+        <button class="primary" id="inline-compose-send">Send</button>
+      </div>
+      <div id="inline-compose-scam-warning" class="warn-banner">A quick safety check: messages that mention wiring money, gift cards, or shipping without meeting in person are common scam patterns. If that's not what you meant, feel free to ignore this.</div>
+      <div id="inline-compose-error" class="auth-error"></div>
+    </div>`;
 
   const sellerLineHtml = l.seller ? `
     <div class="rating-line">
@@ -433,8 +468,7 @@ function buildListingPageHtml(l) {
     ${sellerLineHtml}
     ${buildDetailsBlockHtml(l)}
     <div class="lp-desc">${escapeHtml(l.description)}</div>
-    ${messageBtnHtml}
-    <div id="inline-compose-wrap"></div>
+    ${sellerComposeHtml}
     ${contactBoxHtml}
     <div class="safety-note">Roost doesn't verify sellers or handle payments. Meet in person before any money changes hands, and never wire funds or pay with gift cards.</div>
     ${l.postedByMe ? `<div class="modal-actions"><button class="secondary" id="detail-edit-btn" style="width:100%;">Edit this listing</button></div>` : ''}
@@ -451,13 +485,7 @@ function wireListingPageHandlers(l, id) {
   if (detailEditBtn) detailEditBtn.addEventListener('click', () => editListing(id));
   const adminRemoveBtn = document.getElementById('modal-admin-remove');
   if (adminRemoveBtn) adminRemoveBtn.addEventListener('click', () => removeListing(id));
-  const messageSellerBtn = document.getElementById('message-seller-btn');
-  if (messageSellerBtn) {
-    messageSellerBtn.addEventListener('click', () => {
-      if (!currentUser) { openAuthModal('login', () => renderListingPage(id)); return; }
-      showInlineCompose(id);
-    });
-  }
+  wireSellerCompose(id);
   const sellerProfileLink = document.getElementById('seller-profile-link');
   if (sellerProfileLink) sellerProfileLink.addEventListener('click', () => openSellerProfile(sellerProfileLink.dataset.sellerId));
   const shareBtn = document.getElementById('share-listing-btn');
@@ -717,7 +745,11 @@ function switchView(view) {
   }
   if (view === 'browse') loadListings();
   if (view === 'mylistings') loadMyListings();
-  if (view === 'messages') { document.getElementById('thread-panel').style.display = 'none'; document.getElementById('conv-list-panel').style.display = 'block'; loadConversations(); }
+  if (view === 'messages') {
+    document.getElementById('messages-shell').classList.remove('showing-thread');
+    resetThreadPanelEmpty();
+    loadConversations();
+  }
 }
 
 document.getElementById('tab-mylistings').addEventListener('click', () => switchView('mylistings'));
@@ -1640,37 +1672,42 @@ document.getElementById('open-terms-from-form').addEventListener('click', (e) =>
 document.getElementById('open-privacy-from-form').addEventListener('click', (e) => { e.preventDefault(); openLegal('privacy'); });
 
 // ===================== MESSAGING =====================
-function showInlineCompose(listingId) {
-  const wrap = document.getElementById('inline-compose-wrap');
-  wrap.innerHTML = `
-    <div class="compose-inline">
-      <div id="inline-compose-scam-warning" class="warn-banner">A quick safety check: messages that mention wiring money, gift cards, or shipping without meeting in person are common scam patterns. If that's not what you meant, feel free to ignore this.</div>
-      <textarea id="inline-compose-text" rows="3" placeholder="Introduce yourself and ask about this bird…"></textarea>
-      <div id="inline-compose-error" class="auth-error"></div>
-      <button class="primary" id="inline-compose-send">Send message</button>
-    </div>
-  `;
-  document.getElementById('inline-compose-text').addEventListener('input', (e) => {
-    document.getElementById('inline-compose-scam-warning').classList.toggle('show', containsScamLanguage(e.target.value));
+// Wires the always-visible "Message seller" bar on a listing page. Signed-out
+// visitors can type a message right away — signing in is only asked for at
+// send time (via the auth modal), rather than gating the whole box behind a
+// separate button the way it used to.
+function wireSellerCompose(listingId) {
+  const sendBtn = document.getElementById('inline-compose-send');
+  if (!sendBtn) return; // not rendered at all on your own listing
+  const input = document.getElementById('inline-compose-text');
+  const warnEl = document.getElementById('inline-compose-scam-warning');
+  const errEl = document.getElementById('inline-compose-error');
+
+  input.addEventListener('input', () => {
+    warnEl.classList.toggle('show', containsScamLanguage(input.value));
   });
-  document.getElementById('inline-compose-send').addEventListener('click', async () => {
-    const text = document.getElementById('inline-compose-text').value.trim();
-    const errEl = document.getElementById('inline-compose-error');
+
+  const send = async () => {
+    if (!currentUser) { openAuthModal('login', () => renderListingPage(listingId)); return; }
+    const text = input.value.trim();
     errEl.textContent = '';
     if (!text) { errEl.textContent = 'Write a message first.'; return; }
     if (containsUrl(text)) { errEl.textContent = 'Links aren\'t allowed in messages — this helps keep everyone safe from off-platform scams.'; return; }
-    const btn = document.getElementById('inline-compose-send');
-    btn.disabled = true; btn.textContent = 'Sending…';
+    sendBtn.disabled = true; sendBtn.textContent = 'Sending…';
     try {
       await api('/listings/' + listingId + '/message', { method: 'POST', body: JSON.stringify({ body: text }) });
-      wrap.innerHTML = `<div class="compose-inline"><p style="color:var(--muted);font-size:13px;margin:0;">Message sent. <a href="#" id="go-to-inbox" style="color:var(--primary-dark);font-weight:600;">View in Messages</a></p></div>`;
+      document.getElementById('seller-compose').innerHTML =
+        `<p style="color:var(--muted);font-size:13px;margin:0;">Message sent. <a href="#" id="go-to-inbox" style="color:var(--primary-dark);font-weight:600;">View in Messages</a></p>`;
       document.getElementById('go-to-inbox').addEventListener('click', (e) => { e.preventDefault(); document.getElementById('tab-messages').click(); });
       refreshUnreadBadge();
     } catch (e) {
       errEl.textContent = (e.data && e.data.error) || 'Could not send that message.';
-      btn.disabled = false; btn.textContent = 'Send message';
+      sendBtn.disabled = false; sendBtn.textContent = 'Send';
     }
-  });
+  };
+
+  sendBtn.addEventListener('click', send);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
 }
 
 async function refreshUnreadBadge() {
@@ -1718,9 +1755,24 @@ async function loadConversations() {
   }
 }
 
+// The right-hand pane's placeholder state before any conversation is picked —
+// on desktop both panes show side by side, so this is what sits in the thread
+// pane at first (rather than it being blank or hidden, Messenger-style).
+function resetThreadPanelEmpty() {
+  document.getElementById('thread-panel').classList.add('empty');
+  document.getElementById('thread-header').innerHTML = '';
+  document.getElementById('thread-messages').innerHTML = `<div class="thread-empty-state">Select a conversation to view messages.</div>`;
+  document.getElementById('thread-scam-warning').classList.remove('show');
+  document.querySelectorAll('.conv-item.active').forEach(el => el.classList.remove('active'));
+}
+
 async function openThread(conversationId) {
-  document.getElementById('conv-list-panel').style.display = 'none';
-  document.getElementById('thread-panel').style.display = 'block';
+  // Mobile (narrow screens): swap the list pane out for the thread pane.
+  // Desktop: both panes already show side by side — this just reveals the
+  // compose bar and back button that stay hidden in the empty state.
+  document.getElementById('messages-shell').classList.add('showing-thread');
+  document.getElementById('thread-panel').classList.remove('empty');
+  document.querySelectorAll('.conv-item').forEach(el => el.classList.toggle('active', el.dataset.convId === String(conversationId)));
   document.getElementById('thread-messages').innerHTML = 'Loading…';
   document.getElementById('thread-header').innerHTML = '';
 
@@ -1792,8 +1844,8 @@ async function openThread(conversationId) {
 }
 
 document.getElementById('thread-back').addEventListener('click', () => {
-  document.getElementById('thread-panel').style.display = 'none';
-  document.getElementById('conv-list-panel').style.display = 'block';
+  document.getElementById('messages-shell').classList.remove('showing-thread');
+  resetThreadPanelEmpty();
   loadConversations();
 });
 

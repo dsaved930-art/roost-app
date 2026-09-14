@@ -339,18 +339,18 @@
 </main>
 
 <main class="wrap" id="view-messages" style="display:none;">
-  <div class="messages-shell">
+  <div class="messages-shell" id="messages-shell">
     <div id="conv-list-panel">
       <h2 style="font-size:22px;margin-bottom:16px;">Messages</h2>
       <div id="conv-list"></div>
     </div>
-    <div id="thread-panel" style="display:none;">
-      <button class="secondary" id="thread-back" style="margin-bottom:14px;">← Back to messages</button>
+    <div id="thread-panel" class="empty">
+      <button class="secondary" id="thread-back">← Back to messages</button>
       <div id="thread-header"></div>
       <div id="thread-messages"></div>
       <div id="thread-scam-warning" class="warn-banner">A quick safety check: messages that mention wiring money, gift cards, or shipping without meeting in person are common scam patterns. If that's not what you meant, feel free to ignore this.</div>
       <div class="thread-compose">
-        <textarea id="thread-input" placeholder="Write a reply…" rows="2"></textarea>
+        <textarea id="thread-input" placeholder="Write a reply…" rows="1"></textarea>
         <button class="primary" id="thread-send">Send</button>
       </div>
     </div>

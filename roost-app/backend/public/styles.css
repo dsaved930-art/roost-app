@@ -121,6 +121,14 @@
   .empty h3{margin-bottom:8px;color:var(--ink);}
   .empty button{margin-top:14px;}
 
+  .loading-state{grid-column:1/-1;padding:90px 20px;text-align:center;color:var(--muted);}
+  .loading-bird{font-size:42px;display:inline-block;animation:loading-bird-fly 1.3s ease-in-out infinite;}
+  @keyframes loading-bird-fly{
+    0%, 100%{transform:translateY(0) rotate(-8deg);}
+    50%{transform:translateY(-16px) rotate(8deg);}
+  }
+  .loading-text{margin-top:16px;font-size:14px;font-weight:500;color:var(--muted);transition:opacity .25s ease;}
+
   button.primary{background:var(--primary);color:#fff;border:none;padding:12px 20px;border-radius:8px;font-family:'Public Sans',sans-serif;font-weight:500;font-size:14px;cursor:pointer;}
   button.primary:hover{background:var(--primary-dark);}
   button.secondary{background:#fff;border:1px solid var(--line);padding:11px 20px;border-radius:8px;font-family:'Public Sans',sans-serif;font-weight:500;font-size:14px;cursor:pointer;color:var(--ink);}
@@ -260,11 +268,18 @@
   .card-title-row{display:flex;align-items:center;gap:5px;}
   .msg-badge{position:absolute;top:-4px;right:-8px;background:var(--rust-dark);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:10px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;display:flex;align-items:center;justify-content:center;}
 
-  .messages-shell{padding:32px 0 60px;}
+  /* Two-pane, Messenger-style layout: conversation list on the left, the
+     selected thread on the right, both visible at once — clicking a
+     conversation updates the right pane instead of navigating away.
+     Collapses to a single pane (list, or thread with a back button) below
+     the mobile breakpoint, where there isn't room for both side by side. */
+  .messages-shell{display:flex;gap:20px;align-items:flex-start;padding:32px 0 60px;}
+  #conv-list-panel{flex:0 0 320px;max-width:320px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;height:calc(100vh - 180px);min-height:420px;overflow-y:auto;box-sizing:border-box;}
   #conv-list{display:flex;flex-direction:column;gap:8px;}
   .conv-item{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);cursor:pointer;text-align:left;width:100%;}
   .conv-item:hover{border-color:var(--primary);}
   .conv-item.unread{border-color:var(--primary);background:#EAF2FC;}
+  .conv-item.active{border-color:var(--primary);background:var(--canvas);}
   .conv-thumb{width:44px;height:44px;border-radius:8px;background:var(--canvas);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:20px;overflow:hidden;}
   .conv-thumb img{width:100%;height:100%;object-fit:cover;}
   .conv-info{flex:1;min-width:0;}
@@ -274,20 +289,38 @@
   .conv-info .conv-preview{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .conv-unread-dot{width:9px;height:9px;border-radius:50%;background:var(--primary);flex:0 0 auto;}
 
-  #thread-header{margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line);}
+  #thread-panel{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;height:calc(100vh - 180px);min-height:420px;box-sizing:border-box;}
+  #thread-back{display:none;margin-bottom:14px;flex:0 0 auto;align-self:flex-start;}
+  #thread-header{flex:0 0 auto;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line);}
   #thread-header .th-listing{font-weight:600;font-size:15px;}
   #thread-header .th-with{font-size:13px;color:var(--muted);}
-  #thread-messages{display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto;margin-bottom:16px;padding-right:4px;}
+  #thread-messages{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;overflow-y:auto;margin-bottom:16px;padding-right:4px;}
+  .thread-empty-state{margin:auto;color:var(--muted);font-size:14px;}
   .msg-bubble{max-width:75%;padding:9px 13px;border-radius:14px;font-size:14px;line-height:1.5;}
   .msg-scam-warning{background:#FBEFE7;border:1px solid var(--rust);color:var(--rust-dark);font-size:12px;line-height:1.4;padding:8px 11px;border-radius:8px;margin:4px 0;max-width:75%;}
   .msg-mine{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px;}
   .msg-theirs{align-self:flex-start;background:var(--canvas);color:var(--ink);border-bottom-left-radius:4px;}
   .msg-time{font-size:10px;opacity:0.7;margin-top:4px;}
-  .thread-compose{display:flex;gap:10px;align-items:flex-end;}
+  .thread-compose{flex:0 0 auto;display:flex;gap:10px;align-items:flex-end;}
   .thread-compose textarea{flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-family:'Public Sans',sans-serif;font-size:14px;resize:vertical;}
+  /* Before a conversation is picked (desktop) or once you've gone "back" to
+     the list (mobile): hide the compose bar, nothing to reply to yet. */
+  #thread-panel.empty .thread-compose{display:none;}
 
-  .compose-inline{margin-top:14px;border-top:1px solid var(--line);padding-top:14px;}
-  .compose-inline textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-family:'Public Sans',sans-serif;font-size:14px;resize:vertical;margin-bottom:10px;}
+  .seller-compose{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;}
+  .seller-compose-label{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:8px;}
+  .seller-compose-row{display:flex;gap:8px;align-items:center;}
+  .seller-compose-row input[type=text]{flex:1;min-width:0;padding:10px 15px;border:1px solid var(--line);border-radius:999px;font-family:'Public Sans',sans-serif;font-size:14px;background:#fff;}
+  .seller-compose-row button{border-radius:999px;padding:9px 22px;flex:0 0 auto;}
+
+  @media(max-width:760px){
+    .messages-shell{display:block;padding:20px 0 60px;}
+    #conv-list-panel{max-width:none;width:100%;height:auto;min-height:0;}
+    #thread-panel{height:auto;min-height:0;}
+    .messages-shell:not(.showing-thread) #thread-panel{display:none;}
+    .messages-shell.showing-thread #conv-list-panel{display:none;}
+    .messages-shell.showing-thread #thread-back{display:inline-flex;}
+  }
 
   /* Star ratings */
   .stars-display{position:relative;display:inline-flex;line-height:1;vertical-align:middle;}
