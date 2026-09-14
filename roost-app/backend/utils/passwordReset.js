@@ -24,8 +24,8 @@ async function sendPasswordResetEmail(user) {
   return sendMail({
     to: user.email,
     subject: 'Reset your Roost password',
-    text: `Hi ${user.name},\n\nSomeone (hopefully you) asked to reset your Roost password. Click this link to set a new one:\n${link}\n\nThis link expires in ${TOKEN_TTL_HOURS} hour. If you didn't request this, you can safely ignore this email — your password won't change.`,
-    html: `<p>Hi ${user.name},</p><p>Someone (hopefully you) asked to reset your Roost password. Click below to set a new one:</p><p><a href="${link}">${link}</a></p><p>This link expires in ${TOKEN_TTL_HOURS} hour. If you didn't request this, you can safely ignore this email — your password won't change.</p>`
+    text: `Hi ${user.name},\n\nSomeone asked to reset your Roost password. Click this link to set a new one:\n${link}\n\nThis link expires in ${TOKEN_TTL_HOURS} hour. If you didn't request this, you can safely ignore this email — your password won't change.`,
+    html: `<p>Hi ${user.name},</p><p>Someone asked to reset your Roost password. Click below to set a new one:</p><p><a href="${link}">${link}</a></p><p>This link expires in ${TOKEN_TTL_HOURS} hour. If you didn't request this, you can safely ignore this email — your password won't change.</p>`
   });
 }
 

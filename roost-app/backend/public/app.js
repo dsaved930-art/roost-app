@@ -117,6 +117,46 @@ function wirePasswordToggle(inputId) {
 function tradeBadgeHtml() {
   return `<span class="trade-badge" title="Seller is open to trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>Open to trade</span>`;
 }
+const HEART_PATH = 'M12 21s-7.5-4.6-10.2-9.3C.3 8.8 1.7 5 5.4 4.2c2.2-.5 4.3.5 5.6 2.4C12.3 4.7 14.4 3.7 16.6 4.2c3.7.8 5.1 4.6 3.6 7.5C19.5 16.4 12 21 12 21z';
+function heartIconSvg(filled, size) {
+  size = size || 18;
+  return filled
+    ? `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path d="${HEART_PATH}"></path></svg>`
+    : `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${HEART_PATH}"></path></svg>`;
+}
+// Sits on top of the card thumbnail (browse grid and Saved view) — always
+// rendered, even signed out, matching the same "let them start, ask them to
+// sign in only when it matters" pattern used for the seller message box.
+function saveToggleBtnHtml(l) {
+  const saved = !!l.savedByMe;
+  return `<button type="button" class="save-toggle-btn ${saved ? 'saved' : ''}" data-id="${l.id}" data-saved="${saved}" aria-label="${saved ? 'Remove from saved' : 'Save this listing'}">${heartIconSvg(saved)}</button>`;
+}
+async function toggleSaveListing(id, btn) {
+  if (!currentUser) { openAuthModal('login'); return; }
+  const nowSaved = btn.dataset.saved !== 'true';
+  btn.disabled = true;
+  try {
+    await api('/listings/' + id + '/save', { method: nowSaved ? 'POST' : 'DELETE' });
+    // Unsaving from the Saved view itself: the card no longer belongs there,
+    // so drop it instead of leaving a stale "saved" card showing unsaved.
+    if (!nowSaved && btn.closest('#saved-grid')) {
+      btn.closest('.card').remove();
+      if (document.querySelectorAll('#saved-grid .card').length === 0) {
+        document.getElementById('saved-grid').innerHTML = `<div class="empty" style="grid-column:1/-1;"><h3>No saved listings yet</h3><p>Tap the heart on any listing to save it here for later.</p></div>`;
+      }
+      return;
+    }
+    btn.dataset.saved = String(nowSaved);
+    btn.classList.toggle('saved', nowSaved);
+    btn.innerHTML = heartIconSvg(nowSaved);
+    btn.setAttribute('aria-label', nowSaved ? 'Remove from saved' : 'Save this listing');
+  } catch (e) {
+    showToast('Could not update saved listings.');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 const CLOCK_ICON_PATH = 'M12 8v4l3 3 M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z';
 // Minimal, always-shown "how long ago was this posted" — deliberately
 // distinct from the bird's own age field, which is a completely different
@@ -341,6 +381,46 @@ function applyFilters() {
   renderGrid(results);
 }
 
+// Shared by the browse grid and the Saved view, so a card looks and behaves
+// identically in both places instead of drifting apart over time.
+function listingCardHtml(l) {
+  const c = catInfo(l.category);
+  const isSupplies = l.category === 'SUP';
+  const metaLead = isSupplies ? conditionLabel(l.condition) : `${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')}`;
+  return `
+    <a class="card" href="/listing/${l.id}" data-id="${l.id}">
+      ${l.free ? '<div class="free-ribbon">FREE</div>' : ''}
+      <div class="thumb">
+        ${l.status === 'pending' ? '<div class="pending-ribbon">PENDING</div>' : ''}
+        ${postTimeBadgeHtml(l.createdAt)}
+        ${saveToggleBtnHtml(l)}
+        <div class="thumb-img-wrap">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="" onerror="this.parentElement.innerHTML='${c.icon}'">` : c.icon}</div>
+      </div>
+      <div class="card-body">
+        <div class="card-title-row"><h3>${escapeHtml(l.title)}</h3>${l.sellerVerified ? verifiedBadgeHtml('inline') : ''}</div>
+        <div class="card-meta">${metaLead} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}${(l._distanceMiles != null) ? ` · <span class="distance-tag">${formatDistance(l._distanceMiles)}</span>` : ''}</div>
+        <div class="card-price">${formatPriceDisplay(l)}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
+      </div>
+    </a>`;
+}
+function wireCardClicks(container) {
+  container.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      e.preventDefault();
+      openDetail(card.dataset.id);
+    });
+  });
+}
+function wireSaveToggleButtons(container) {
+  container.querySelectorAll('.save-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation(); // sits inside the card <a> — don't also navigate
+      toggleSaveListing(btn.dataset.id, btn);
+    });
+  });
+}
+
 function renderGrid(results) {
   clearInterval(browseLoadingInterval);
   const grid = document.getElementById('listings-grid');
@@ -354,32 +434,9 @@ function renderGrid(results) {
     </div>`;
     return;
   }
-  grid.innerHTML = results.map(l => {
-    const c = catInfo(l.category);
-    const isSupplies = l.category === 'SUP';
-    const metaLead = isSupplies ? conditionLabel(l.condition) : `${escapeHtml(l.breed)} · ${escapeHtml(l.age || 'age n/a')}`;
-    return `
-    <a class="card" href="/listing/${l.id}" data-id="${l.id}">
-      ${l.free ? '<div class="free-ribbon">FREE</div>' : ''}
-      <div class="thumb">
-        ${l.status === 'pending' ? '<div class="pending-ribbon">PENDING</div>' : ''}
-        ${postTimeBadgeHtml(l.createdAt)}
-        <div class="thumb-img-wrap">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="" onerror="this.parentElement.innerHTML='${c.icon}'">` : c.icon}</div>
-      </div>
-      <div class="card-body">
-        <div class="card-title-row"><h3>${escapeHtml(l.title)}</h3>${l.sellerVerified ? verifiedBadgeHtml('inline') : ''}</div>
-        <div class="card-meta">${metaLead} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}${(l._distanceMiles != null) ? ` · <span class="distance-tag">${formatDistance(l._distanceMiles)}</span>` : ''}</div>
-        <div class="card-price">${formatPriceDisplay(l)}${l.openToTrade ? tradeBadgeHtml() : ''}</div>
-      </div>
-    </a>`;
-  }).join('');
-  grid.querySelectorAll('.card').forEach(card => {
-    card.addEventListener('click', (e) => {
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
-      e.preventDefault();
-      openDetail(card.dataset.id);
-    });
-  });
+  grid.innerHTML = results.map(listingCardHtml).join('');
+  wireCardClicks(grid);
+  wireSaveToggleButtons(grid);
 }
 
 function updateFilterBadge() {
@@ -479,13 +536,22 @@ function buildListingPageHtml(l) {
       ${photos.map((p, i) => `<button class="lp-thumb-btn ${i === 0 ? 'active' : ''}" data-index="${i}" data-full="${escapeAttr(p.full)}"><img src="${escapeAttr(p.thumb)}" alt=""></button>`).join('')}
     </div>` : '';
 
+  const saveBtnHtml = l.postedByMe ? '' : `
+      <button class="share-btn save-listing-btn ${l.savedByMe ? 'saved' : ''}" id="save-listing-btn" data-id="${l.id}" data-saved="${!!l.savedByMe}">
+        ${heartIconSvg(!!l.savedByMe, 14)}
+        <span id="save-listing-btn-label">${l.savedByMe ? 'Saved' : 'Save'}</span>
+      </button>`;
+
   return `
     <div class="lp-header-row">
       <div class="lp-band"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};"></span>${c.label}</div>
-      <button class="share-btn" id="share-listing-btn" title="Copy link to this listing">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
-        Share
-      </button>
+      <div style="display:flex;gap:8px;">
+        ${saveBtnHtml}
+        <button class="share-btn" id="share-listing-btn" title="Copy link to this listing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+          Share
+        </button>
+      </div>
     </div>
     <h1>${escapeHtml(l.title)}</h1>
     <div class="lp-meta">${l.category === 'SUP' ? conditionLabel(l.condition) : `${escapeHtml(l.breed)} ${l.sex ? '· ' + escapeHtml(l.sex) : ''}`} · ${escapeHtml(l.city)}, ${escapeHtml(l.state)}</div>
@@ -501,6 +567,7 @@ function buildListingPageHtml(l) {
     <div class="lp-desc">${escapeHtml(l.description)}</div>
     ${sellerComposeHtml}
     ${contactBoxHtml}
+    ${l.postedByMe ? '' : `<button class="secondary alert-cta-btn" id="alert-cta-btn" style="width:100%;">${statIconSvg(BELL_ICON_PATH, 14)} Get alerts for listings like this</button>`}
     <div class="safety-note">Roost doesn't verify sellers or handle payments. Meet in person before any money changes hands, and never wire funds or pay with gift cards.</div>
     ${l.postedByMe ? `<div class="modal-actions"><button class="secondary" id="detail-edit-btn" style="width:100%;">Edit this listing</button></div>` : ''}
     ${isAdmin() ? `<div class="modal-actions"><button class="secondary" id="modal-admin-remove" style="color:var(--rust-dark);border-color:var(--rust);">Remove listing</button></div>` : ''}
@@ -521,6 +588,42 @@ function wireListingPageHandlers(l, id) {
   if (sellerProfileLink) sellerProfileLink.addEventListener('click', () => openSellerProfile(sellerProfileLink.dataset.sellerId));
   const shareBtn = document.getElementById('share-listing-btn');
   if (shareBtn) shareBtn.addEventListener('click', () => shareListing(id, l.title));
+  const saveListingBtn = document.getElementById('save-listing-btn');
+  if (saveListingBtn) {
+    saveListingBtn.addEventListener('click', async () => {
+      if (!currentUser) { openAuthModal('login', () => renderListingPage(id)); return; }
+      const nowSaved = saveListingBtn.dataset.saved !== 'true';
+      saveListingBtn.disabled = true;
+      try {
+        await api('/listings/' + id + '/save', { method: nowSaved ? 'POST' : 'DELETE' });
+        saveListingBtn.dataset.saved = String(nowSaved);
+        saveListingBtn.classList.toggle('saved', nowSaved);
+        saveListingBtn.innerHTML = `${heartIconSvg(nowSaved, 14)}<span id="save-listing-btn-label">${nowSaved ? 'Saved' : 'Save'}</span>`;
+      } catch (e) {
+        showToast('Could not update saved listings.');
+      } finally {
+        saveListingBtn.disabled = false;
+      }
+    });
+  }
+  const alertCtaBtn = document.getElementById('alert-cta-btn');
+  if (alertCtaBtn) {
+    alertCtaBtn.addEventListener('click', async () => {
+      if (!currentUser) { openAuthModal('login', () => renderListingPage(id)); return; }
+      alertCtaBtn.disabled = true;
+      const name = l.breed ? `${l.breed} alerts` : `${catInfo(l.category).label} alerts`;
+      try {
+        await api('/saved-searches', { method: 'POST', body: JSON.stringify({
+          name, category: l.category, query: l.breed || null, emailAlerts: true
+        }) });
+        alertCtaBtn.innerHTML = `${statIconSvg(BELL_ICON_PATH, 14)} Alert created — we'll email you about similar listings`;
+        refreshAlertsBadge();
+      } catch (e) {
+        showToast((e.data && e.data.error) || 'Could not create that alert.');
+        alertCtaBtn.disabled = false;
+      }
+    });
+  }
   document.querySelectorAll('.lp-thumb-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const mainImg = document.getElementById('lp-main-img');
@@ -767,15 +870,18 @@ function switchView(view) {
   document.getElementById('view-messages').style.display = view === 'messages' ? 'block' : 'none';
   document.getElementById('view-listing').style.display = view === 'listing' ? 'block' : 'none';
   document.getElementById('view-mylistings').style.display = view === 'mylistings' ? 'block' : 'none';
+  document.getElementById('view-saved').style.display = view === 'saved' ? 'block' : 'none';
   document.getElementById('tab-browse').classList.toggle('active', view === 'browse');
   document.getElementById('tab-post').classList.toggle('active', view === 'post');
   document.getElementById('tab-messages').classList.toggle('active', view === 'messages');
   document.getElementById('tab-mylistings').classList.toggle('active', view === 'mylistings');
+  document.getElementById('tab-saved').classList.toggle('active', view === 'saved');
   if (view !== 'listing' && window.location.pathname.startsWith('/listing/')) {
     window.history.pushState({}, '', '/');
   }
   if (view === 'browse') loadListings();
   if (view === 'mylistings') loadMyListings();
+  if (view === 'saved') loadSavedListings();
   if (view === 'messages') {
     document.getElementById('messages-shell').classList.remove('showing-thread');
     resetThreadPanelEmpty();
@@ -784,6 +890,25 @@ function switchView(view) {
 }
 
 document.getElementById('tab-mylistings').addEventListener('click', () => switchView('mylistings'));
+document.getElementById('tab-saved').addEventListener('click', () => switchView('saved'));
+
+async function loadSavedListings() {
+  const grid = document.getElementById('saved-grid');
+  grid.innerHTML = `<div class="loading-state" style="grid-column:1/-1;"><div class="loading-bird" aria-hidden="true">🐦</div><div class="loading-text">Fetching your saved listings…</div></div>`;
+  try {
+    const data = await api('/listings/saved');
+    const listings = data.listings || [];
+    if (listings.length === 0) {
+      grid.innerHTML = `<div class="empty" style="grid-column:1/-1;"><h3>No saved listings yet</h3><p>Tap the heart on any listing to save it here for later.</p></div>`;
+      return;
+    }
+    grid.innerHTML = listings.map(listingCardHtml).join('');
+    wireCardClicks(grid);
+    wireSaveToggleButtons(grid);
+  } catch (e) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1;">Could not load your saved listings. <button class="secondary" onclick="loadSavedListings()">Retry</button></div>`;
+  }
+}
 
 document.getElementById('listing-back').addEventListener('click', () => {
   window.history.pushState({}, '', '/');
@@ -1277,12 +1402,14 @@ function updateAuthArea() {
   const messagesTab = document.getElementById('tab-messages');
   const alertsBtn = document.getElementById('alerts-btn');
   const myListingsTab = document.getElementById('tab-mylistings');
+  const savedTab = document.getElementById('tab-saved');
   if (!currentUser) {
     area.innerHTML = `<button id="signin-btn">Sign in</button>`;
     document.getElementById('signin-btn').addEventListener('click', () => openAuthModal('login'));
     messagesTab.style.display = 'none';
     alertsBtn.style.display = 'none';
     myListingsTab.style.display = 'none';
+    savedTab.style.display = 'none';
     return;
   }
   area.innerHTML = `<button id="account-btn" class="greeting-btn">Hi, ${escapeHtml(currentUser.name)}${currentUser.verificationStatus === 'verified' ? verifiedBadgeHtml('inline') : ''}</button><button id="logout-btn">Log out</button>`;
@@ -1291,6 +1418,7 @@ function updateAuthArea() {
   messagesTab.style.display = 'inline-flex';
   alertsBtn.style.display = 'flex';
   myListingsTab.style.display = 'inline-flex';
+  savedTab.style.display = 'inline-flex';
   refreshUnreadBadge();
   refreshAlertsBadge();
 }
@@ -2080,8 +2208,16 @@ async function loadMyListings() {
       item.addEventListener('click', () => openDetail(item.dataset.id));
     });
     listEl.querySelectorAll('.myl-status-select').forEach(select => {
+      select.dataset.prevValue = select.value;
       select.addEventListener('click', (e) => e.stopPropagation());
-      select.addEventListener('change', () => updateListingStatus(select.dataset.id, select.value));
+      select.addEventListener('change', () => {
+        if (select.value === 'sold') {
+          openSoldToPicker(select.dataset.id, select);
+        } else {
+          updateListingStatus(select.dataset.id, select.value);
+          select.dataset.prevValue = select.value;
+        }
+      });
     });
     listEl.querySelectorAll('.myl-edit').forEach(btn => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); editListing(btn.dataset.id); });
@@ -2097,15 +2233,56 @@ async function loadMyListings() {
   }
 }
 
-async function updateListingStatus(id, status) {
+async function updateListingStatus(id, status, soldToUserId) {
   try {
-    await api('/listings/' + id, { method: 'PATCH', body: JSON.stringify({ status }) });
+    await api('/listings/' + id, { method: 'PATCH', body: JSON.stringify({ status, soldToUserId: soldToUserId || null }) });
     const messages = { active: 'Marked as active.', pending: 'Marked as pending — still visible to buyers, flagged as a deal in progress.', sold: 'Marked as sold.' };
     showToast(messages[status] || 'Listing updated.');
     loadMyListings();
   } catch (e) {
     showToast((e.data && e.data.error) || 'Could not update that listing.');
   }
+}
+
+// Shown when a seller switches a listing to "Sold" — lets them pick which
+// buyer (from everyone who's messaged about it) it actually went to, since
+// that's what now unlocks that buyer's ability to leave a review. `select`
+// is the <select> that triggered this, so a cancel can revert its value
+// instead of leaving it visually stuck on "Sold" without confirming.
+async function openSoldToPicker(listingId, select) {
+  document.getElementById('sold-to-overlay').classList.add('show');
+  const listEl = document.getElementById('sold-to-list');
+  listEl.innerHTML = 'Loading…';
+  try {
+    const data = await api('/listings/' + listingId + '/buyers');
+    const buyers = data.buyers || [];
+    if (buyers.length === 0) {
+      listEl.innerHTML = `<div class="empty" style="padding:16px 0;">No one has messaged you about this listing yet — you can still mark it sold below.</div>`;
+    } else {
+      listEl.innerHTML = buyers.map(b => `<button class="sold-to-buyer-btn" data-buyer-id="${b.id}">${escapeHtml(b.name)}</button>`).join('');
+      listEl.querySelectorAll('.sold-to-buyer-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.getElementById('sold-to-overlay').classList.remove('show');
+          updateListingStatus(listingId, 'sold', btn.dataset.buyerId);
+          if (select) select.dataset.prevValue = 'sold';
+        });
+      });
+    }
+  } catch (e) {
+    listEl.innerHTML = `<div class="empty" style="padding:16px 0;">Could not load buyers for this listing.</div>`;
+  }
+
+  document.getElementById('sold-to-skip').onclick = () => {
+    document.getElementById('sold-to-overlay').classList.remove('show');
+    updateListingStatus(listingId, 'sold');
+    if (select) select.dataset.prevValue = 'sold';
+  };
+  const closeWithoutChoosing = () => {
+    document.getElementById('sold-to-overlay').classList.remove('show');
+    if (select) select.value = select.dataset.prevValue; // didn't confirm — don't leave the dropdown stuck on "Sold"
+  };
+  document.getElementById('sold-to-close').onclick = closeWithoutChoosing;
+  document.getElementById('sold-to-overlay').onclick = (e) => { if (e.target.id === 'sold-to-overlay') closeWithoutChoosing(); };
 }
 
 

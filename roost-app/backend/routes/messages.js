@@ -88,7 +88,8 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
       [req.params.id, req.user.id]
     );
 
-    const listingResult = await pool.query('SELECT id, title, photo_thumb AS "photoUrl" FROM listings WHERE id = $1', [conv.listing_id]);
+    const listingResult = await pool.query('SELECT id, title, photo_thumb AS "photoUrl", sold_to_user_id AS "soldToUserId" FROM listings WHERE id = $1', [conv.listing_id]);
+    const listing = listingResult.rows[0] || null;
 
     const isBuyer = conv.buyer_id === req.user.id;
     let alreadyReviewed = false;
@@ -99,14 +100,18 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
       );
       alreadyReviewed = reviewCheck.rows.length > 0;
     }
+    // Only reviewable once the seller has marked THIS buyer as who they sold
+    // it to (see the reviews route in listings.js for the real enforcement —
+    // this flag just controls whether the button shows up at all).
+    const isConfirmedBuyer = !!(listing && listing.soldToUserId === req.user.id);
 
     res.json({
       conversation: {
         id: conv.id,
-        listing: listingResult.rows[0] || null,
+        listing: listing ? { id: listing.id, title: listing.title, photoUrl: listing.photoUrl } : null,
         buyerId: conv.buyer_id,
         sellerId: conv.seller_id,
-        canReview: isBuyer && !alreadyReviewed,
+        canReview: isBuyer && isConfirmedBuyer && !alreadyReviewed,
         alreadyReviewed
       },
       messages: messages.rows

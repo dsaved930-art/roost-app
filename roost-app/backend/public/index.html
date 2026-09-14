@@ -59,6 +59,7 @@
       <button id="tab-browse" class="active">Browse</button>
       <button id="tab-post">Post a bird</button>
       <button id="tab-mylistings" style="display:none;">My Listings</button>
+      <button id="tab-saved" style="display:none;">Saved</button>
       <button id="tab-messages" style="display:none;position:relative;">Messages<span class="msg-badge" id="msg-badge" style="display:none;"></span></button>
     </nav>
     <button id="alerts-btn" class="bell-btn" style="display:none;" aria-label="Saved search alerts">
@@ -333,6 +334,12 @@
   <div id="myl-list"></div>
 </main>
 
+<main class="wrap" id="view-saved" style="display:none;">
+  <h2 style="font-size:24px;margin-bottom:4px;">Saved</h2>
+  <p style="color:var(--muted);font-size:14px;margin-bottom:20px;">Listings you've bookmarked for later.</p>
+  <div class="grid" id="saved-grid"></div>
+</main>
+
 <main class="wrap listing-page" id="view-listing" style="display:none;">
   <button class="secondary" id="listing-back" style="margin-bottom:18px;">← Back to Browse</button>
   <div id="listing-page-body"><!--LISTING_SSR_CONTENT--></div>
@@ -428,6 +435,16 @@
     <textarea id="rate-comment" rows="3" placeholder="Optional — anything other buyers should know?"></textarea>
     <div class="auth-error" id="rate-error"></div>
     <button class="primary" id="rate-submit" style="width:100%;margin-top:6px;">Submit review</button>
+  </div>
+</div>
+
+<div class="overlay" id="sold-to-overlay">
+  <div class="modal rate-modal">
+    <button class="modal-close" id="sold-to-close">✕</button>
+    <h2 style="font-size:20px;margin-bottom:4px;">Who'd you sell it to?</h2>
+    <div class="auth-sub">Picking the buyer lets them leave you a review — and keeps reviews limited to people you actually confirm bought something.</div>
+    <div id="sold-to-list">Loading…</div>
+    <button class="secondary" id="sold-to-skip" style="width:100%;margin-top:10px;">Sold outside Roost messaging — skip this</button>
   </div>
 </div>
 

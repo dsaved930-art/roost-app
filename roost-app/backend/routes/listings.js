@@ -13,14 +13,21 @@ const { geocodeCityState } = require('../utils/geocode');
 // birds — they still exist and are visible via GET /sold and their own detail page.
 router.get('/', async (req, res) => {
   try {
+    // req.user comes from authOptional (set on every request, even here where
+    // sign-in isn't required) — null when signed out, which makes the saved-
+    // listings join below correctly match nothing rather than erroring.
     const result = await pool.query(
       `SELECT l.id, l.title, l.category, l.breed, l.age, l.sex, l.free, l.price, l.price_type AS "priceType", l.open_to_trade AS "openToTrade", l.city, l.state,
               l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.lat, l.lon,
               l.status, l.shipping_available AS "shippingAvailable", l.condition,
-              COALESCE(u.verification_status = 'verified', FALSE) AS "sellerVerified"
-       FROM listings l LEFT JOIN users u ON u.id = l.posted_by
+              COALESCE(u.verification_status = 'verified', FALSE) AS "sellerVerified",
+              (sl.id IS NOT NULL) AS "savedByMe"
+       FROM listings l
+       LEFT JOIN users u ON u.id = l.posted_by
+       LEFT JOIN saved_listings sl ON sl.listing_id = l.id AND sl.user_id = $1
        WHERE l.status != 'sold'
-       ORDER BY l.created_at DESC`
+       ORDER BY l.created_at DESC`,
+      [req.user ? req.user.id : null]
     );
     res.json({ listings: result.rows });
   } catch (e) {
@@ -71,6 +78,52 @@ router.get('/mine', requireAuth, async (req, res) => {
   }
 });
 
+// Listings this user has bookmarked for later. Must be registered before
+// GET /:id, same reason as /mine and /sold above.
+router.get('/saved', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT l.id, l.title, l.category, l.breed, l.age, l.sex, l.free, l.price, l.price_type AS "priceType",
+              l.open_to_trade AS "openToTrade", l.city, l.state, l.photo_thumb AS "photoUrl",
+              l.created_at AS "createdAt", l.status, l.condition, sl.created_at AS "savedAt", TRUE AS "savedByMe"
+       FROM saved_listings sl
+       JOIN listings l ON l.id = sl.listing_id
+       WHERE sl.user_id = $1
+       ORDER BY sl.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ listings: result.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not load your saved listings.' });
+  }
+});
+
+router.post('/:id/save', requireAuth, async (req, res) => {
+  try {
+    const listingCheck = await pool.query('SELECT id FROM listings WHERE id = $1', [req.params.id]);
+    if (listingCheck.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    await pool.query(
+      'INSERT INTO saved_listings (user_id, listing_id) VALUES ($1, $2) ON CONFLICT (user_id, listing_id) DO NOTHING',
+      [req.user.id, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not save that listing.' });
+  }
+});
+
+router.delete('/:id/save', requireAuth, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM saved_listings WHERE user_id = $1 AND listing_id = $2', [req.user.id, req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not unsave that listing.' });
+  }
+});
+
 // Detail — contact info is only attached to the response if the request is authenticated.
 // This is the real version of the "sign in to see contact info" gate: enforced by the
 // server deciding what to send, not by the browser deciding what to show.
@@ -112,6 +165,12 @@ router.get('/:id', async (req, res) => {
       }
     }
 
+    let savedByMe = false;
+    if (req.user) {
+      const savedCheck = await pool.query('SELECT id FROM saved_listings WHERE user_id = $1 AND listing_id = $2', [req.user.id, l.id]);
+      savedByMe = savedCheck.rows.length > 0;
+    }
+
     const payload = {
       id: l.id, title: l.title, category: l.category, breed: l.breed, age: l.age, sex: l.sex,
       free: l.free, price: Number(l.price), openToTrade: l.open_to_trade, city: l.city, state: l.state, description: l.description,
@@ -121,6 +180,7 @@ router.get('/:id', async (req, res) => {
       sold: l.status === 'sold', status: l.status, soldAt: l.sold_at, shippingAvailable: l.shipping_available,
       contactLocked: !req.user,
       postedByMe: !!(req.user && l.posted_by === req.user.id),
+      savedByMe,
       seller
     };
     if (req.user) {
@@ -384,14 +444,55 @@ router.patch('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Status must be active, pending, or sold.' });
     }
     if (req.body.status === 'sold') {
-      await pool.query('UPDATE listings SET status = $1, sold = TRUE, sold_at = now() WHERE id = $2', [req.body.status, req.params.id]);
+      // soldToUserId is optional — a seller can mark something sold without
+      // picking a buyer (e.g. it sold outside Roost messaging). When given,
+      // it must actually be someone who messaged about this listing, since
+      // this is the real gate on who's allowed to leave a review afterward —
+      // not just a label.
+      let soldToUserId = null;
+      if (req.body.soldToUserId) {
+        const buyerCheck = await pool.query(
+          'SELECT id FROM conversations WHERE listing_id = $1 AND seller_id = $2 AND buyer_id = $3',
+          [req.params.id, req.user.id, req.body.soldToUserId]
+        );
+        if (buyerCheck.rows.length === 0) {
+          return res.status(400).json({ error: 'That buyer hasn\'t messaged you about this listing.' });
+        }
+        soldToUserId = req.body.soldToUserId;
+      }
+      await pool.query(
+        'UPDATE listings SET status = $1, sold = TRUE, sold_at = now(), sold_to_user_id = $2 WHERE id = $3',
+        [req.body.status, soldToUserId, req.params.id]
+      );
     } else {
-      await pool.query('UPDATE listings SET status = $1, sold = FALSE, sold_at = NULL WHERE id = $2', [req.body.status, req.params.id]);
+      await pool.query('UPDATE listings SET status = $1, sold = FALSE, sold_at = NULL, sold_to_user_id = NULL WHERE id = $2', [req.body.status, req.params.id]);
     }
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not update that listing.' });
+  }
+});
+
+// Buyers the seller can pick from when marking a listing sold — anyone
+// who's messaged them about it. Owner-only, since this is only useful (and
+// only meaningful) from the "mark as sold" flow.
+router.get('/:id/buyers', requireAuth, async (req, res) => {
+  try {
+    const check = await pool.query('SELECT posted_by FROM listings WHERE id = $1', [req.params.id]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    if (check.rows[0].posted_by !== req.user.id) {
+      return res.status(403).json({ error: 'You can only view buyers for your own listings.' });
+    }
+    const result = await pool.query(
+      `SELECT u.id, u.name FROM conversations c JOIN users u ON u.id = c.buyer_id
+       WHERE c.listing_id = $1 AND c.seller_id = $2 ORDER BY c.created_at ASC`,
+      [req.params.id, req.user.id]
+    );
+    res.json({ buyers: result.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not load buyers for that listing.' });
   }
 });
 
@@ -448,10 +549,13 @@ router.post('/:id/message', requireAuth, async (req, res) => {
   }
 });
 
-// Leave a review for the seller of this listing. Only allowed if the reviewer
-// actually messaged the seller about this specific listing first — this is
-// the closest thing we have to "proof of a real interaction" without payment
-// data to verify an actual sale.
+// Leave a review for the seller of this listing. Only allowed for the buyer
+// the SELLER picked as who they sold it to (sold_to_user_id, set via
+// PATCH /:id) — messaging a seller alone used to be enough, which meant
+// literally anyone could leave a public rating without ever actually buying
+// anything. Requiring the seller's own confirmation is slower for buyers
+// (a seller has to actually mark it sold-to-them first) but means a review
+// is real evidence of a completed deal, not just idle contact.
 router.post('/:id/reviews', requireAuth, async (req, res) => {
   try {
     const rating = Number(req.body && req.body.rating);
@@ -460,18 +564,14 @@ router.post('/:id/reviews', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Rating must be a whole number from 1 to 5.' });
     }
 
-    const listingResult = await pool.query('SELECT id, posted_by FROM listings WHERE id = $1', [req.params.id]);
+    const listingResult = await pool.query('SELECT id, posted_by, sold_to_user_id AS "soldToUserId" FROM listings WHERE id = $1', [req.params.id]);
     if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
     const listing = listingResult.rows[0];
     if (!listing.posted_by) return res.status(400).json({ error: 'This listing has no linked seller account to review.' });
     if (listing.posted_by === req.user.id) return res.status(400).json({ error: "You can't review your own listing." });
 
-    const convCheck = await pool.query(
-      'SELECT id FROM conversations WHERE listing_id = $1 AND buyer_id = $2',
-      [listing.id, req.user.id]
-    );
-    if (convCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'Message this seller about the listing before leaving a review.' });
+    if (listing.soldToUserId !== req.user.id) {
+      return res.status(403).json({ error: "The seller hasn't marked you as the buyer for this listing yet." });
     }
 
     try {

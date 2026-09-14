@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS listings (
   view_count     INTEGER NOT NULL DEFAULT 0,
   sold           BOOLEAN NOT NULL DEFAULT FALSE,
   sold_at        TIMESTAMPTZ,
+  sold_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, -- seller-picked buyer; gates who can leave a review (see routes/listings.js reviews route)
   lat            NUMERIC,          -- geocoded from city/state; NULL if geocoding failed or hasn't run
   lon            NUMERIC,
   dna_sexed      TEXT NOT NULL DEFAULT 'unknown' CHECK (dna_sexed IN ('yes','no','unknown')),
@@ -211,6 +212,19 @@ ALTER TABLE listings ADD COLUMN IF NOT EXISTS condition TEXT;
 DO $$ BEGIN
   ALTER TABLE listings ADD CONSTRAINT listings_condition_check CHECK (condition IS NULL OR condition IN ('new','used_like_new','used_good','needs_repair'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS sold_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+-- Lets a signed-in user bookmark a listing for later without it being a
+-- public "like" — purely personal, same idea as My Listings but for browsing.
+CREATE TABLE IF NOT EXISTS saved_listings (
+  id             SERIAL PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  listing_id     INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, listing_id)
+);
+CREATE INDEX IF NOT EXISTS idx_saved_listings_user ON saved_listings (user_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_users_verification_status ON users (verification_status);
 CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_token ON email_verification_tokens (token);
