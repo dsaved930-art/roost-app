@@ -251,6 +251,10 @@
   #auth-gate-content .field{margin-bottom:14px;}
   #auth-gate-content .field label{display:block;font-size:13px;font-weight:500;margin-bottom:6px;}
   #auth-gate-content .field input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:'Public Sans',sans-serif;font-size:14px;background:#fff;}
+  .password-field-wrap{position:relative;}
+  #auth-gate-content .password-field-wrap input{padding-right:40px;}
+  .password-toggle-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:none;border:none;padding:0;cursor:pointer;color:var(--muted);border-radius:6px;}
+  .password-toggle-btn:hover{color:var(--ink);background:var(--canvas);}
   .auth-error{color:var(--rust-dark);font-size:13px;margin-bottom:12px;min-height:1px;}
   .auth-switch{font-size:13px;margin-top:16px;text-align:center;color:var(--muted);}
   .auth-switch a{color:var(--primary-dark);font-weight:600;text-decoration:none;}

@@ -83,6 +83,37 @@ function verifiedBadgeHtml(mode) {
   const size = mode === 'inline' ? 14 : (mode === 'large' ? 18 : 15);
   return `<span class="verified-badge" title="Verified breeder"><svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor"><path d="${CHECK_PATH}"/></svg>${mode === 'large' ? '<span>Verified breeder</span>' : ''}</span>`;
 }
+// Show/hide toggle for password fields. `visible` describes the field's
+// CURRENT state — true (plain text) shows the "eye-off" icon, since
+// clicking it hides the password again; false shows the plain eye.
+function eyeIconSvg(visible) {
+  if (visible) {
+    return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+}
+function passwordFieldHtml(id, label, placeholder) {
+  return `<div class="field">
+    <label for="${id}">${label}</label>
+    <div class="password-field-wrap">
+      <input type="password" id="${id}" placeholder="${placeholder}">
+      <button type="button" class="password-toggle-btn" data-target="${id}" aria-label="Show password" tabindex="-1">${eyeIconSvg(false)}</button>
+    </div>
+  </div>`;
+}
+// Called once right after the field's HTML is inserted into the page.
+function wirePasswordToggle(inputId) {
+  const input = document.getElementById(inputId);
+  const btn = document.querySelector(`.password-toggle-btn[data-target="${inputId}"]`);
+  if (!input || !btn) return;
+  btn.addEventListener('click', () => {
+    const nowVisible = input.type === 'password';
+    input.type = nowVisible ? 'text' : 'password';
+    btn.innerHTML = eyeIconSvg(nowVisible);
+    btn.setAttribute('aria-label', nowVisible ? 'Hide password' : 'Show password');
+  });
+}
+
 function tradeBadgeHtml() {
   return `<span class="trade-badge" title="Seller is open to trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>Open to trade</span>`;
 }
@@ -1093,7 +1124,7 @@ function renderAuthGate(mode) {
       <div class="auth-sub">Takes about 15 seconds — just a name, email, and password.</div>
       <div class="field"><label for="auth-name">Name</label><input type="text" id="auth-name" placeholder="Jordan"></div>
       <div class="field"><label for="auth-email">Email</label><input type="text" id="auth-email" placeholder="you@email.com"></div>
-      <div class="field"><label for="auth-password">Password</label><input type="password" id="auth-password" placeholder="At least 6 characters"></div>
+      ${passwordFieldHtml('auth-password', 'Password', 'At least 6 characters')}
       <div class="auth-error" id="auth-error"></div>
       <button class="primary" id="auth-submit" style="width:100%;">Create account</button>
       <div class="auth-switch">Already have an account? <a href="#" id="auth-switch-link">Log in</a></div>
@@ -1101,6 +1132,7 @@ function renderAuthGate(mode) {
     `;
     document.getElementById('auth-switch-link').addEventListener('click', (e) => { e.preventDefault(); renderAuthGate('login'); });
     document.getElementById('auth-submit').addEventListener('click', handleSignup);
+    wirePasswordToggle('auth-password');
   } else if (mode === 'forgot') {
     c.innerHTML = `
       <h2>Reset your password</h2>
@@ -1117,7 +1149,7 @@ function renderAuthGate(mode) {
       <h2>Sign in</h2>
       <div class="auth-sub">Sign in to see how to contact this seller.</div>
       <div class="field"><label for="auth-email">Email</label><input type="text" id="auth-email" placeholder="you@email.com"></div>
-      <div class="field"><label for="auth-password">Password</label><input type="password" id="auth-password" placeholder="Password"></div>
+      ${passwordFieldHtml('auth-password', 'Password', 'Password')}
       <div class="auth-error" id="auth-error"></div>
       <button class="primary" id="auth-submit" style="width:100%;">Log in</button>
       <div class="auth-switch">New to Roost? <a href="#" id="auth-switch-link">Create an account</a></div>
@@ -1126,6 +1158,7 @@ function renderAuthGate(mode) {
     document.getElementById('auth-switch-link').addEventListener('click', (e) => { e.preventDefault(); renderAuthGate('signup'); });
     document.getElementById('auth-forgot-link').addEventListener('click', (e) => { e.preventDefault(); renderAuthGate('forgot'); });
     document.getElementById('auth-submit').addEventListener('click', handleLogin);
+    wirePasswordToggle('auth-password');
   }
 }
 
@@ -1201,10 +1234,11 @@ async function handleResetPassword(token) {
   c.innerHTML = `
     <h2>Set a new password</h2>
     <div class="auth-sub">Choose a new password for your Roost account.</div>
-    <div class="field"><label for="reset-password-input">New password</label><input type="password" id="reset-password-input" placeholder="At least 6 characters"></div>
+    ${passwordFieldHtml('reset-password-input', 'New password', 'At least 6 characters')}
     <div class="auth-error" id="auth-error"></div>
     <button class="primary" id="reset-submit-btn" style="width:100%;">Set new password</button>
   `;
+  wirePasswordToggle('reset-password-input');
   document.getElementById('reset-submit-btn').addEventListener('click', async () => {
     const err = document.getElementById('auth-error');
     err.style.color = 'var(--rust-dark)';
