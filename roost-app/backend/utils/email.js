@@ -18,7 +18,11 @@ async function sendMail({ to, subject, text, html }) {
     return { skipped: true };
   }
   return transporter.sendMail({
-    from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+    // Without an explicit display name, email clients fall back to showing
+    // whatever's before the @ as the "sender name" — e.g. literally "hello"
+    // for hello@roostmarketplace.com, which reads like a person's name
+    // rather than the actual sender.
+    from: `"Roost" <${process.env.FROM_EMAIL || process.env.SMTP_USER}>`,
     to, subject, text, html
   });
 }
