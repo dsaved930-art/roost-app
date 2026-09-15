@@ -46,7 +46,7 @@ router.post('/signup', async (req, res) => {
     }
 
     setAuthCookie(res, user);
-    res.json({ user: { name: user.name, email: user.email, role: user.role, emailVerified: user.email_verified, verificationStatus: user.verification_status, verificationNote: user.verification_note } });
+    res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, emailVerified: user.email_verified, verificationStatus: user.verification_status, verificationNote: user.verification_note } });
 
     sendVerificationEmail(user).catch(err => console.error('sendVerificationEmail failed:', err));
   } catch (e) {
@@ -73,7 +73,7 @@ router.post('/login', async (req, res) => {
     if (!ok) return res.status(401).json({ error: 'Incorrect password.' });
 
     setAuthCookie(res, user);
-    res.json({ user: { name: user.name, email: user.email, role: user.role, emailVerified: user.email_verified, verificationStatus: user.verification_status, verificationNote: user.verification_note } });
+    res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, emailVerified: user.email_verified, verificationStatus: user.verification_status, verificationNote: user.verification_note } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Something went wrong logging in.' });
@@ -89,7 +89,7 @@ router.get('/me', async (req, res) => {
   if (!req.user) return res.json({ user: null });
   try {
     const result = await pool.query(
-      `SELECT name, email, phone, role, email_verified AS "emailVerified", verification_status AS "verificationStatus",
+      `SELECT id, name, email, phone, role, email_verified AS "emailVerified", verification_status AS "verificationStatus",
               verification_note AS "verificationNote"
        FROM users WHERE id = $1`,
       [req.user.id]
@@ -187,7 +187,7 @@ router.post('/reset-password', async (req, res) => {
 
     const user = updated.rows[0];
     setAuthCookie(res, user); // sign them straight in, same as a fresh login
-    res.json({ user: { name: user.name, email: user.email, role: user.role, emailVerified: user.email_verified, verificationStatus: user.verification_status, verificationNote: user.verification_note } });
+    res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, emailVerified: user.email_verified, verificationStatus: user.verification_status, verificationNote: user.verification_note } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Something went wrong resetting your password.' });

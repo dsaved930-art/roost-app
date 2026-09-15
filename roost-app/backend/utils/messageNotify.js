@@ -21,7 +21,7 @@ async function sendNewMessageEmail({ recipientEmail, recipientName, senderName, 
 
   return sendMail({
     to: recipientEmail,
-    subject: `${senderName} sent you a message about "${listingTitle}"`,
+    subject: `${senderName} sent you a message on Roost about "${listingTitle}"`,
     text: `Hi ${recipientName},\n\n${senderName} sent you a message about "${listingTitle}" on Roost:\n\n"${preview}"\n\nReply here: ${link}\n\n— Roost`,
     html: `
       <p>Hi ${escHtml(recipientName)},</p>
