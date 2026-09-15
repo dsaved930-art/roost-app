@@ -268,6 +268,8 @@
   .auth-area .greeting-btn{color:var(--ink);font-weight:600;display:inline-flex;align-items:center;gap:4px;}
   .auth-area button{background:none;border:none;color:var(--primary-dark);font-weight:600;cursor:pointer;font-size:13px;padding:0;font-family:'Public Sans',sans-serif;}
   .auth-area button:hover{text-decoration:underline;}
+  .auth-area button.primary{background:var(--primary);padding:8px 16px;border-radius:8px;color:#fff;}
+  .auth-area button.primary:hover{text-decoration:none;opacity:0.92;}
 
   .verified-badge{display:inline-flex;align-items:center;gap:4px;color:#fff;background:var(--primary);border-radius:999px;padding:2px 4px;vertical-align:middle;}
   .verified-badge span{font-size:12px;font-weight:600;padding-right:4px;}

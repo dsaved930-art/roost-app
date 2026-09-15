@@ -1404,8 +1404,9 @@ function updateAuthArea() {
   const myListingsTab = document.getElementById('tab-mylistings');
   const savedTab = document.getElementById('tab-saved');
   if (!currentUser) {
-    area.innerHTML = `<button id="signin-btn">Sign in</button>`;
+    area.innerHTML = `<button id="signin-btn">Sign in</button><button class="primary" id="signup-btn">Create account</button>`;
     document.getElementById('signin-btn').addEventListener('click', () => openAuthModal('login'));
+    document.getElementById('signup-btn').addEventListener('click', () => openAuthModal('signup'));
     messagesTab.style.display = 'none';
     alertsBtn.style.display = 'none';
     myListingsTab.style.display = 'none';
