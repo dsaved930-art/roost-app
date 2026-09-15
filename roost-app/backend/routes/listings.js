@@ -65,7 +65,8 @@ router.get('/mine', requireAuth, async (req, res) => {
       `SELECT l.id, l.title, l.category, l.free, l.price, l.price_type AS "priceType", l.city, l.state, l.status, l.sold_at AS "soldAt",
               l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.view_count AS "viewCount",
               (SELECT COUNT(DISTINCT buyer_id)::int FROM conversations WHERE listing_id = l.id) AS "conversationCount",
-              (SELECT COUNT(*)::int FROM saved_search_matches WHERE listing_id = l.id) AS "alertMatches"
+              (SELECT COUNT(*)::int FROM saved_search_matches WHERE listing_id = l.id) AS "alertMatches",
+              (SELECT COUNT(*)::int FROM saved_listings WHERE listing_id = l.id) AS "saveCount"
        FROM listings l
        WHERE l.posted_by = $1
        ORDER BY l.created_at DESC`,

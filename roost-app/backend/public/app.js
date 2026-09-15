@@ -2161,13 +2161,15 @@ async function loadMyListings() {
       acc.views += l.viewCount;
       acc.conversations += l.conversationCount;
       acc.alerts += l.alertMatches;
+      acc.saves += l.saveCount;
       return acc;
-    }, { views: 0, conversations: 0, alerts: 0 });
+    }, { views: 0, conversations: 0, alerts: 0, saves: 0 });
 
     summaryEl.innerHTML = `
       <div class="stat-card"><div class="num">${listings.length}</div><div class="label">Active listings</div></div>
       <div class="stat-card"><div class="num">${totals.views}</div><div class="label">Total views</div></div>
       <div class="stat-card"><div class="num">${totals.conversations}</div><div class="label">Buyers messaged you</div></div>
+      <div class="stat-card"><div class="num">${totals.saves}</div><div class="label">Times saved by buyers</div></div>
       <div class="stat-card"><div class="num">${totals.alerts}</div><div class="label">Saved-search alerts sent</div></div>
     `;
 
@@ -2189,6 +2191,7 @@ async function loadMyListings() {
           <div class="myl-stats">
             <span class="myl-stat">${statIconSvg(EYE_PATH_1, 13)} ${l.viewCount} view${l.viewCount === 1 ? '' : 's'}</span>
             <span class="myl-stat">${statIconSvg(CHAT_ICON_PATH, 13)} ${l.conversationCount} buyer${l.conversationCount === 1 ? '' : 's'} messaged</span>
+            <span class="myl-stat">${heartIconSvg(true, 13)} ${l.saveCount} save${l.saveCount === 1 ? '' : 's'}</span>
             <span class="myl-stat">${statIconSvg(BELL_ICON_PATH, 13)} ${l.alertMatches} alert${l.alertMatches === 1 ? '' : 's'} sent</span>
           </div>
         </div>
