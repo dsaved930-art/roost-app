@@ -1,6 +1,13 @@
 const pool = require('../db');
 const { sendMail } = require('../utils/email');
 
+function escHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+function publicUrl() {
+  return (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+}
+
 // Mirrors the same matching logic the frontend's filter panel uses, so a
 // saved search behaves exactly like "the filters you had on when you saved it."
 function matchesSearch(search, listing) {
@@ -57,11 +64,16 @@ async function notifySavedSearches(listing) {
 
       if (search.email_alerts) {
         const priceText = listing.free ? 'Free' : `$${listing.price}`;
+        const link = `${publicUrl()}/listing/${listing.id}`;
         sendMail({
           to: search.user_email,
           subject: `New match for your saved search "${search.name}"`,
-          text: `${listing.title} — ${priceText} — ${listing.city}, ${listing.state}\n\nSee it on Roost.`,
-          html: `<p><strong>${listing.title}</strong> — ${priceText} — ${listing.city}, ${listing.state}</p><p>This matches your saved search "${search.name}" on Roost.</p>`
+          text: `${listing.title} — ${priceText} — ${listing.city}, ${listing.state}\n\nThis matches your saved search "${search.name}" on Roost.\n\nSee it here: ${link}`,
+          html: `
+            <p><strong>${escHtml(listing.title)}</strong> — ${escHtml(priceText)} — ${escHtml(listing.city)}, ${escHtml(listing.state)}</p>
+            <p>This matches your saved search "${escHtml(search.name)}" on Roost.</p>
+            <p><a href="${link}" style="display:inline-block;background:#1B74E4;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">See it on Roost</a></p>
+          `
         }).catch(err => console.error('Saved-search email failed:', err));
       }
     }
