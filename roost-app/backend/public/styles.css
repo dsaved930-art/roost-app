@@ -448,6 +448,37 @@
 .myl-stats{display:flex;gap:14px;flex-wrap:wrap;}
 .myl-stat{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
 .myl-stat svg{width:13px;height:13px;}
+
+.myl-boost-status{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;}
+.myl-boost-flag{font-size:12px;font-weight:600;color:var(--ink);}
+.myl-boost-results{font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+.myl-boost-btn{font-size:12px;padding:7px 14px;}
+
+/* The rotating neon ring while a listing is actively boosted — same spirit
+   as Tinder's Boost effect: only the seller sees it (My Listings only),
+   never shown on the public browse grid. Degrades gracefully to a plain
+   static ring in browsers without @property support — still reads as
+   "something special," just without the rotation. */
+@property --boost-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.myl-item.boosted-glow{position:relative;border-color:transparent;}
+.myl-item.boosted-glow::before{
+  content:'';
+  position:absolute;
+  inset:-3px;
+  border-radius:14px;
+  padding:3px;
+  background:conic-gradient(from var(--boost-angle), #ff2fd0, #7b2ff7, #00e5ff, #ff2fd0);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask-composite:exclude;
+  animation:boost-rotate 3s linear infinite;
+  pointer-events:none;
+}
+@keyframes boost-rotate{ to { --boost-angle:360deg; } }
 .myl-actions{display:flex;flex-direction:column;gap:6px;flex:0 0 auto;}
 .myl-actions button{font-size:12px;padding:7px 12px;white-space:nowrap;}
 

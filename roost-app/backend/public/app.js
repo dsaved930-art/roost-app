@@ -371,6 +371,10 @@ function applyFilters() {
   updateFilterBadge();
 
   results.sort((a, b) => {
+    // Boosted listings win regardless of sort order — that guaranteed top
+    // placement is the entire point of paying for it. Not shown as a public
+    // "sponsored" label, just felt as "this one's always near the top."
+    if (!!a.isBoosted !== !!b.isBoosted) return a.isBoosted ? -1 : 1;
     if (sortFilter === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
     if (sortFilter === 'oldest') return new Date(a.createdAt) - new Date(b.createdAt);
     if (sortFilter === 'price-low') return (a.free ? 0 : a.price) - (b.free ? 0 : b.price);
@@ -2183,8 +2187,26 @@ async function loadMyListings() {
       const c = catInfo(l.category);
       const when = new Date(l.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
       const statusBadge = l.status === 'sold' ? '<span class="sold-badge">SOLD</span> ' : l.status === 'pending' ? '<span class="pending-badge">PENDING</span> ' : '';
+      const boostResultsHtml = (label) => `<span class="myl-boost-results">${label}: +${l.boostViewsGained} view${l.boostViewsGained === 1 ? '' : 's'} · +${l.boostSavesGained} save${l.boostSavesGained === 1 ? '' : 's'} · +${l.boostConversationsGained} message${l.boostConversationsGained === 1 ? '' : 's'}</span>`;
+      let boostSectionHtml = '';
+      if (l.status !== 'sold') {
+        if (l.boostIsActive) {
+          const until = new Date(l.boostedUntil).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+          boostSectionHtml = `
+            <div class="myl-boost-status myl-boost-active">
+              <span class="myl-boost-flag">🚀 Boosted until ${until}</span>
+              ${boostResultsHtml('Since boosting')}
+            </div>`;
+        } else {
+          boostSectionHtml = `
+            <div class="myl-boost-status">
+              ${l.boostStartedAt ? boostResultsHtml('Last boost') : ''}
+              <button class="secondary myl-boost-btn" data-id="${l.id}">${BOOST_BUTTON_LABEL}</button>
+            </div>`;
+        }
+      }
       return `
-      <div class="myl-item ${l.status === 'sold' ? 'myl-sold' : ''}" data-id="${l.id}">
+      <div class="myl-item ${l.status === 'sold' ? 'myl-sold' : ''} ${l.boostIsActive ? 'boosted-glow' : ''}" data-id="${l.id}">
         <div class="myl-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
         <div class="myl-info">
           <div class="myl-title">${statusBadge}${escapeHtml(l.title)} — ${formatPriceDisplay(l)}</div>
@@ -2195,6 +2217,7 @@ async function loadMyListings() {
             <span class="myl-stat">${heartIconSvg(true, 13)} ${l.saveCount} save${l.saveCount === 1 ? '' : 's'}</span>
             <span class="myl-stat">${statIconSvg(BELL_ICON_PATH, 13)} ${l.alertMatches} alert${l.alertMatches === 1 ? '' : 's'} sent</span>
           </div>
+          ${boostSectionHtml}
         </div>
         <div class="myl-actions">
           <select class="myl-status-select" data-id="${l.id}">
@@ -2208,6 +2231,9 @@ async function loadMyListings() {
         </div>
       </div>`;
     }).join('');
+    listEl.querySelectorAll('.myl-boost-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); boostListing(btn.dataset.id, btn); });
+    });
     listEl.querySelectorAll('.myl-item').forEach(item => {
       item.addEventListener('click', () => openDetail(item.dataset.id));
     });
@@ -2234,6 +2260,25 @@ async function loadMyListings() {
     });
   } catch (e) {
     listEl.innerHTML = `<div class="empty" style="padding:30px 10px;">Could not load your listings.</div>`;
+  }
+}
+
+// Keep in sync with BOOST_PRICE_CENTS/BOOST_DURATION_DAYS in routes/listings.js —
+// this is just the button's label, the server is what actually enforces the price.
+const BOOST_BUTTON_LABEL = '🚀 Boost this listing — $4.99 for 3 days';
+
+// Redirects to Stripe's hosted checkout for a one-time boost purchase.
+// Activation happens after the redirect back (handleBoostConfirmRedirect),
+// not here — this only ever starts the payment.
+async function boostListing(id, btn) {
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Starting checkout…';
+  try {
+    const data = await api('/listings/' + id + '/boost/checkout', { method: 'POST' });
+    window.location.href = data.url;
+  } catch (e) {
+    showToast((e.data && e.data.error) || 'Could not start checkout for that boost.');
+    btn.disabled = false; btn.textContent = original;
   }
 }
 
@@ -2815,6 +2860,43 @@ function handleConversationRedirect() {
   openIt();
 }
 
+// Lands here after Stripe Checkout redirects back — either a successful
+// boost payment (?boostConfirm=<listingId>&session_id=<id>) or a canceled
+// one (?boostCanceled=<listingId>). Success still requires calling the
+// server to actually activate the boost; Stripe redirecting back here only
+// proves the browser made it back, not that the payment succeeded.
+function handleBoostConfirmRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const canceledId = params.get('boostCanceled');
+  if (canceledId) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('boostCanceled');
+    window.history.replaceState({}, '', url.toString());
+    showToast('Boost checkout canceled — no charge made.');
+    return;
+  }
+
+  const listingId = params.get('boostConfirm');
+  const sessionId = params.get('session_id');
+  if (!listingId || !sessionId) return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('boostConfirm');
+  url.searchParams.delete('session_id');
+  window.history.replaceState({}, '', url.toString());
+
+  const confirmIt = async () => {
+    try {
+      await api('/listings/' + listingId + '/boost/confirm', { method: 'POST', body: JSON.stringify({ sessionId }) });
+      showToast('🚀 Listing boosted for 3 days!');
+      switchView('mylistings');
+    } catch (e) {
+      showToast((e.data && e.data.error) || 'Could not confirm that boost.');
+    }
+  };
+  if (!currentUser) { openAuthModal('login', confirmIt); return; }
+  confirmIt();
+}
+
 // ===================== CITY/STATE AUTOCOMPLETE (optional) =====================
 // Only activates if a GOOGLE_PLACES_API_KEY is configured server-side —
 // otherwise these fields just work as plain text, same as always.
@@ -2917,7 +2999,7 @@ populateCategorySelect();
 renderPhotoGrid();
 routeFromLocation();
 loadRecentlySold();
-refreshCurrentUser().then(() => { handleVerifyRedirect(); handleConversationRedirect(); });
+refreshCurrentUser().then(() => { handleVerifyRedirect(); handleConversationRedirect(); handleBoostConfirmRedirect(); });
 handleResetTokenRedirect();
 setupGooglePlacesIfConfigured();
 api('/stats/pageview', { method: 'POST' }).catch(() => {});

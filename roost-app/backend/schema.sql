@@ -71,6 +71,12 @@ CREATE TABLE IF NOT EXISTS listings (
   shipping_available BOOLEAN NOT NULL DEFAULT FALSE,
   status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','pending','sold')),
   condition      TEXT,             -- only meaningful for category = 'SUP' (Supplies & equipment); NULL for live bird listings
+  boosted_until  TIMESTAMPTZ,      -- NULL or in the past = not boosted; pins the listing to the top of Browse while in the future
+  boost_started_at TIMESTAMPTZ,    -- when the most recent boost began; kept after it expires so results still show
+  boost_view_count_at_start INTEGER,         -- view_count snapshot at boost purchase, so "gained since boosting" is a real delta
+  boost_save_count_at_start INTEGER,
+  boost_conversation_count_at_start INTEGER,
+  boost_stripe_session_id TEXT,    -- last processed Checkout session id, so a page refresh can't double-activate a boost
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -214,6 +220,14 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS sold_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boosted_until TIMESTAMPTZ;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_started_at TIMESTAMPTZ;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_view_count_at_start INTEGER;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_save_count_at_start INTEGER;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_conversation_count_at_start INTEGER;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_stripe_session_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_listings_boosted_until ON listings (boosted_until) WHERE boosted_until IS NOT NULL;
 
 -- Lets a signed-in user bookmark a listing for later without it being a
 -- public "like" — purely personal, same idea as My Listings but for browsing.

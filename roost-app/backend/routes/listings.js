@@ -7,6 +7,12 @@ const { sendNewMessageEmail } = require('../utils/messageNotify');
 const { containsUrl } = require('../utils/linkDetection');
 const { publicDisplayName } = require('../utils/displayName');
 const { geocodeCityState } = require('../utils/geocode');
+const { stripe, stripeConfigured } = require('../utils/stripe');
+
+// v1 is deliberately a single flat tier — simplest thing to actually test
+// whether sellers want this at all before building out multiple durations.
+const BOOST_PRICE_CENTS = 499; // $4.99
+const BOOST_DURATION_DAYS = 3;
 
 // Browse — summaries only. Contact info is never included here, at all, for anyone.
 // Sold listings are excluded here so buyers don't wade through unavailable
@@ -21,12 +27,13 @@ router.get('/', async (req, res) => {
               l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.lat, l.lon,
               l.status, l.shipping_available AS "shippingAvailable", l.condition,
               COALESCE(u.verification_status = 'verified', FALSE) AS "sellerVerified",
-              (sl.id IS NOT NULL) AS "savedByMe"
+              (sl.id IS NOT NULL) AS "savedByMe",
+              (l.boosted_until IS NOT NULL AND l.boosted_until > now()) AS "isBoosted"
        FROM listings l
        LEFT JOIN users u ON u.id = l.posted_by
        LEFT JOIN saved_listings sl ON sl.listing_id = l.id AND sl.user_id = $1
        WHERE l.status != 'sold'
-       ORDER BY l.created_at DESC`,
+       ORDER BY (l.boosted_until IS NOT NULL AND l.boosted_until > now()) DESC, l.created_at DESC`,
       [req.user ? req.user.id : null]
     );
     res.json({ listings: result.rows });
@@ -64,6 +71,10 @@ router.get('/mine', requireAuth, async (req, res) => {
     const result = await pool.query(
       `SELECT l.id, l.title, l.category, l.free, l.price, l.price_type AS "priceType", l.city, l.state, l.status, l.sold_at AS "soldAt",
               l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.view_count AS "viewCount",
+              l.boosted_until AS "boostedUntil", l.boost_started_at AS "boostStartedAt",
+              l.boost_view_count_at_start AS "boostViewCountAtStart",
+              l.boost_save_count_at_start AS "boostSaveCountAtStart",
+              l.boost_conversation_count_at_start AS "boostConversationCountAtStart",
               (SELECT COUNT(DISTINCT buyer_id)::int FROM conversations WHERE listing_id = l.id) AS "conversationCount",
               (SELECT COUNT(*)::int FROM saved_search_matches WHERE listing_id = l.id) AS "alertMatches",
               (SELECT COUNT(*)::int FROM saved_listings WHERE listing_id = l.id) AS "saveCount"
@@ -72,7 +83,19 @@ router.get('/mine', requireAuth, async (req, res) => {
        ORDER BY l.created_at DESC`,
       [req.user.id]
     );
-    res.json({ listings: result.rows });
+    // "Gained since boosting" as a real before/after delta, not a lifetime
+    // total — computed here so the frontend just displays a number.
+    const listings = result.rows.map(l => {
+      if (!l.boostStartedAt) return { ...l, boostIsActive: false };
+      return {
+        ...l,
+        boostIsActive: !!(l.boostedUntil && new Date(l.boostedUntil) > new Date()),
+        boostViewsGained: Math.max(0, l.viewCount - (l.boostViewCountAtStart || 0)),
+        boostSavesGained: Math.max(0, l.saveCount - (l.boostSaveCountAtStart || 0)),
+        boostConversationsGained: Math.max(0, l.conversationCount - (l.boostConversationCountAtStart || 0))
+      };
+    });
+    res.json({ listings });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not load your listings.' });
@@ -122,6 +145,104 @@ router.delete('/:id/save', requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not unsave that listing.' });
+  }
+});
+
+// Starts a Stripe Checkout session to boost this listing. Confirmation (and
+// actually activating the boost) happens in /boost/confirm once Stripe
+// redirects back — this route only ever creates the session, it never
+// touches boosted_until itself.
+router.post('/:id/boost/checkout', requireAuth, async (req, res) => {
+  try {
+    if (!stripeConfigured) return res.status(503).json({ error: 'Payments are not configured yet.' });
+
+    const listingResult = await pool.query(
+      'SELECT id, title, posted_by, status, boosted_until AS "boostedUntil" FROM listings WHERE id = $1',
+      [req.params.id]
+    );
+    if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    const listing = listingResult.rows[0];
+    if (listing.posted_by !== req.user.id) return res.status(403).json({ error: 'You can only boost your own listings.' });
+    if (listing.status === 'sold') return res.status(400).json({ error: "Sold listings can't be boosted." });
+    if (listing.boostedUntil && new Date(listing.boostedUntil) > new Date()) {
+      return res.status(400).json({ error: `This listing is already boosted until ${new Date(listing.boostedUntil).toLocaleString()}.` });
+    }
+
+    const base = (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: BOOST_PRICE_CENTS,
+          product_data: {
+            name: `Boost listing: ${listing.title}`,
+            description: `${BOOST_DURATION_DAYS} days of top placement on Roost`
+          }
+        },
+        quantity: 1
+      }],
+      success_url: `${base}/?boostConfirm=${listing.id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${base}/?boostCanceled=${listing.id}`,
+      metadata: { listingId: String(listing.id), userId: String(req.user.id) }
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not start checkout for that boost.' });
+  }
+});
+
+// Confirms a completed Checkout session and actually activates the boost.
+// Keyed off session id (not just "did a payment happen") so a page refresh
+// or double-click can't re-snapshot the view/save/message counts a second
+// time and wipe out an in-progress "gained since boosting" delta.
+router.post('/:id/boost/confirm', requireAuth, async (req, res) => {
+  try {
+    if (!stripeConfigured) return res.status(503).json({ error: 'Payments are not configured yet.' });
+    const sessionId = String((req.body && req.body.sessionId) || '');
+    if (!sessionId) return res.status(400).json({ error: 'Missing checkout session.' });
+
+    const listingResult = await pool.query(
+      'SELECT id, posted_by, view_count AS "viewCount", boost_stripe_session_id AS "boostStripeSessionId" FROM listings WHERE id = $1',
+      [req.params.id]
+    );
+    if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    const listing = listingResult.rows[0];
+    if (listing.posted_by !== req.user.id) return res.status(403).json({ error: 'You can only confirm a boost for your own listing.' });
+
+    if (listing.boostStripeSessionId === sessionId) {
+      return res.json({ ok: true }); // already activated from this exact payment
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status !== 'paid') return res.status(400).json({ error: 'That payment has not completed yet.' });
+    if (session.metadata.listingId !== String(listing.id) || session.metadata.userId !== String(req.user.id)) {
+      return res.status(403).json({ error: 'That payment does not match this listing.' });
+    }
+
+    const [saveCountResult, conversationCountResult] = await Promise.all([
+      pool.query('SELECT COUNT(*)::int AS count FROM saved_listings WHERE listing_id = $1', [listing.id]),
+      pool.query('SELECT COUNT(DISTINCT buyer_id)::int AS count FROM conversations WHERE listing_id = $1', [listing.id])
+    ]);
+
+    await pool.query(
+      `UPDATE listings SET
+         boosted_until = now() + make_interval(days => $1),
+         boost_started_at = now(),
+         boost_view_count_at_start = $2,
+         boost_save_count_at_start = $3,
+         boost_conversation_count_at_start = $4,
+         boost_stripe_session_id = $5
+       WHERE id = $6`,
+      [BOOST_DURATION_DAYS, listing.viewCount, saveCountResult.rows[0].count, conversationCountResult.rows[0].count, sessionId, listing.id]
+    );
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not confirm that boost.' });
   }
 });
 
