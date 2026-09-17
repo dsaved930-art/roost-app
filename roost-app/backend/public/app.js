@@ -200,6 +200,7 @@ function escapeAttr(s) { return escapeHtml(s); }
 let currentCategory = 'all';
 let allListings = [];
 let currentUser = null; // {name, email, role} — comes from the server, not local guesswork
+let boostFreeTrial = false; // set from /api/config — while true, Boost is free instead of $4.99
 
 function renderChips() {
   const wrap = document.getElementById('category-chips');
@@ -345,7 +346,13 @@ function applyFilters() {
     if (priceMin !== '' && !l.free && l.price < Number(priceMin)) return false;
     if (priceMin !== '' && l.free && Number(priceMin) > 0) return false;
     if (priceMax !== '' && !l.free && l.price > Number(priceMax)) return false;
-    if (activeLocation) {
+    // Boosted listings skip the location filter entirely, for now — the app
+    // is small enough that a boosted listing getting hidden just because a
+    // buyer happened to search a specific area would make the boost feel
+    // broken ("I paid and it's not even showing"). Revisit once there's
+    // enough volume that a nationwide boosted listing showing up in every
+    // local search starts to feel spammy instead of just generous reach.
+    if (activeLocation && !l.isBoosted) {
       if (locationHasCoords && l.lat != null && l.lon != null) {
         // Real distance — both the search location and this listing geocoded successfully.
         l._distanceMiles = distanceMilesClient(activeLocation.lat, activeLocation.lon, Number(l.lat), Number(l.lon));
@@ -2201,7 +2208,7 @@ async function loadMyListings() {
           boostSectionHtml = `
             <div class="myl-boost-status">
               ${l.boostStartedAt ? boostResultsHtml('Last boost') : ''}
-              <button class="secondary myl-boost-btn" data-id="${l.id}">${BOOST_BUTTON_LABEL}</button>
+              <button class="secondary myl-boost-btn" data-id="${l.id}">${boostButtonLabel()}</button>
             </div>`;
         }
       }
@@ -2263,18 +2270,28 @@ async function loadMyListings() {
   }
 }
 
-// Keep in sync with BOOST_PRICE_CENTS/BOOST_DURATION_DAYS in routes/listings.js —
-// this is just the button's label, the server is what actually enforces the price.
-const BOOST_BUTTON_LABEL = '🚀 Boost this listing — $4.99 for 3 days';
+// Keep the "3 days" wording in sync with BOOST_DURATION_DAYS in
+// routes/listings.js — the server is what actually enforces the price/dates,
+// this is just the button's label. Reflects the free-trial flag from
+// /api/config so the button never claims to charge when it won't.
+function boostButtonLabel() {
+  return boostFreeTrial
+    ? '🚀 Try Boost free — 3 days (trial period)'
+    : '🚀 Boost this listing — $4.99 for 3 days';
+}
 
-// Redirects to Stripe's hosted checkout for a one-time boost purchase.
-// Activation happens after the redirect back (handleBoostConfirmRedirect),
-// not here — this only ever starts the payment.
+// Redirects to Stripe's hosted checkout for a one-time boost purchase — or,
+// during the free trial, activates immediately with no payment step at all.
 async function boostListing(id, btn) {
   const original = btn.textContent;
-  btn.disabled = true; btn.textContent = 'Starting checkout…';
+  btn.disabled = true; btn.textContent = boostFreeTrial ? 'Activating…' : 'Starting checkout…';
   try {
     const data = await api('/listings/' + id + '/boost/checkout', { method: 'POST' });
+    if (data.free) {
+      showToast('🚀 Boosted for free — trial period!');
+      loadMyListings();
+      return;
+    }
     window.location.href = data.url;
   } catch (e) {
     showToast((e.data && e.data.error) || 'Could not start checkout for that boost.');
@@ -2983,6 +3000,7 @@ function initCityAutocomplete() {
 async function setupGooglePlacesIfConfigured() {
   try {
     const config = await api('/config');
+    boostFreeTrial = !!config.boostFreeTrial;
     if (!config.googlePlacesApiKey) return; // not configured — plain text fields, no error, no fuss
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.googlePlacesApiKey)}&libraries=places&callback=initCityAutocomplete`;

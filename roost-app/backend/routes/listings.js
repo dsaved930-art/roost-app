@@ -8,11 +8,34 @@ const { containsUrl } = require('../utils/linkDetection');
 const { publicDisplayName } = require('../utils/displayName');
 const { geocodeCityState } = require('../utils/geocode');
 const { stripe, stripeConfigured } = require('../utils/stripe');
+const { BOOST_FREE_TRIAL } = require('../config/boost');
 
 // v1 is deliberately a single flat tier — simplest thing to actually test
 // whether sellers want this at all before building out multiple durations.
 const BOOST_PRICE_CENTS = 499; // $4.99
 const BOOST_DURATION_DAYS = 3;
+
+// Shared by the free-trial path and the post-payment confirm path — snapshots
+// current view/save/message counts and flips boosted_until forward. Kept in
+// one place so "what counts as activating a boost" can't drift between the
+// two callers.
+async function activateBoost(listingId, viewCount, stripeSessionId) {
+  const [saveCountResult, conversationCountResult] = await Promise.all([
+    pool.query('SELECT COUNT(*)::int AS count FROM saved_listings WHERE listing_id = $1', [listingId]),
+    pool.query('SELECT COUNT(DISTINCT buyer_id)::int AS count FROM conversations WHERE listing_id = $1', [listingId])
+  ]);
+  await pool.query(
+    `UPDATE listings SET
+       boosted_until = now() + make_interval(days => $1),
+       boost_started_at = now(),
+       boost_view_count_at_start = $2,
+       boost_save_count_at_start = $3,
+       boost_conversation_count_at_start = $4,
+       boost_stripe_session_id = $5
+     WHERE id = $6`,
+    [BOOST_DURATION_DAYS, viewCount, saveCountResult.rows[0].count, conversationCountResult.rows[0].count, stripeSessionId, listingId]
+  );
+}
 
 // Browse — summaries only. Contact info is never included here, at all, for anyone.
 // Sold listings are excluded here so buyers don't wade through unavailable
@@ -154,10 +177,8 @@ router.delete('/:id/save', requireAuth, async (req, res) => {
 // touches boosted_until itself.
 router.post('/:id/boost/checkout', requireAuth, async (req, res) => {
   try {
-    if (!stripeConfigured) return res.status(503).json({ error: 'Payments are not configured yet.' });
-
     const listingResult = await pool.query(
-      'SELECT id, title, posted_by, status, boosted_until AS "boostedUntil" FROM listings WHERE id = $1',
+      'SELECT id, title, posted_by, status, view_count AS "viewCount", boosted_until AS "boostedUntil" FROM listings WHERE id = $1',
       [req.params.id]
     );
     if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
@@ -168,6 +189,14 @@ router.post('/:id/boost/checkout', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `This listing is already boosted until ${new Date(listing.boostedUntil).toLocaleString()}.` });
     }
 
+    // Trial period — skip Stripe entirely and activate immediately, free.
+    // Flip BOOST_FREE_TRIAL off in config/boost.js when ready to charge again.
+    if (BOOST_FREE_TRIAL) {
+      await activateBoost(listing.id, listing.viewCount, null);
+      return res.json({ free: true });
+    }
+
+    if (!stripeConfigured) return res.status(503).json({ error: 'Payments are not configured yet.' });
     const base = (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -222,23 +251,7 @@ router.post('/:id/boost/confirm', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'That payment does not match this listing.' });
     }
 
-    const [saveCountResult, conversationCountResult] = await Promise.all([
-      pool.query('SELECT COUNT(*)::int AS count FROM saved_listings WHERE listing_id = $1', [listing.id]),
-      pool.query('SELECT COUNT(DISTINCT buyer_id)::int AS count FROM conversations WHERE listing_id = $1', [listing.id])
-    ]);
-
-    await pool.query(
-      `UPDATE listings SET
-         boosted_until = now() + make_interval(days => $1),
-         boost_started_at = now(),
-         boost_view_count_at_start = $2,
-         boost_save_count_at_start = $3,
-         boost_conversation_count_at_start = $4,
-         boost_stripe_session_id = $5
-       WHERE id = $6`,
-      [BOOST_DURATION_DAYS, listing.viewCount, saveCountResult.rows[0].count, conversationCountResult.rows[0].count, sessionId, listing.id]
-    );
-
+    await activateBoost(listing.id, listing.viewCount, sessionId);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

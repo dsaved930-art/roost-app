@@ -3,6 +3,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const { authOptional } = require('./middleware/auth');
+const { BOOST_FREE_TRIAL } = require('./config/boost');
 
 const app = express();
 
@@ -25,7 +26,7 @@ app.use('/api/geocode', require('./routes/geocode'));
 // isn't configured, so the frontend can gracefully fall back to plain
 // text entry rather than break.
 app.get('/api/config', (req, res) => {
-  res.json({ googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY || null });
+  res.json({ googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY || null, boostFreeTrial: BOOST_FREE_TRIAL });
 });
 
 // SEO: real, crawlable, individually-addressable pages for each listing —
