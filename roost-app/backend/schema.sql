@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS listings (
   boost_save_count_at_start INTEGER,
   boost_conversation_count_at_start INTEGER,
   boost_stripe_session_id TEXT,    -- last processed Checkout session id, so a page refresh can't double-activate a boost
+  boost_checkout_locked_until TIMESTAMPTZ, -- short-lived claim while a checkout is in flight, closes the double-click-two-tabs race
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -227,6 +228,7 @@ ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_view_count_at_start INTEGER;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_save_count_at_start INTEGER;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_conversation_count_at_start INTEGER;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_stripe_session_id TEXT;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_checkout_locked_until TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_listings_boosted_until ON listings (boosted_until) WHERE boosted_until IS NOT NULL;
 
 -- Lets a signed-in user bookmark a listing for later without it being a

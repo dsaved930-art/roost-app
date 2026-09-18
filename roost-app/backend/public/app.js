@@ -2195,25 +2195,39 @@ async function loadMyListings() {
       const when = new Date(l.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
       const statusBadge = l.status === 'sold' ? '<span class="sold-badge">SOLD</span> ' : l.status === 'pending' ? '<span class="pending-badge">PENDING</span> ' : '';
       const boostResultsHtml = (label) => `<span class="myl-boost-results">${label}: +${l.boostViewsGained} view${l.boostViewsGained === 1 ? '' : 's'} · +${l.boostSavesGained} save${l.boostSavesGained === 1 ? '' : 's'} · +${l.boostConversationsGained} message${l.boostConversationsGained === 1 ? '' : 's'}</span>`;
+      // Non-refundable, including an early sale — spelled out up front so it's
+      // never a surprise raised after the fact. Doesn't apply during the free
+      // trial, since there's nothing charged to refund.
+      const boostDisclaimerHtml = boostFreeTrial ? '' : `<div class="myl-boost-disclaimer">One-time charge, non-refundable — even if this sells or gets removed before the 3 days are up.</div>`;
       let boostSectionHtml = '';
-      if (l.status !== 'sold') {
+      if (l.status === 'sold') {
+        // Sold mid-boost: the boost isn't refunded, but leaving the seller
+        // with zero explanation for why a boost they paid for stopped
+        // "working" is exactly the kind of thing that turns into a dispute.
         if (l.boostIsActive) {
           const until = new Date(l.boostedUntil).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
           boostSectionHtml = `
-            <div class="myl-boost-status myl-boost-active">
-              <span class="myl-boost-flag">🚀 Boosted until ${until}</span>
-              ${boostResultsHtml('Since boosting')}
-            </div>`;
-        } else {
-          boostSectionHtml = `
             <div class="myl-boost-status">
-              ${l.boostStartedAt ? boostResultsHtml('Last boost') : ''}
-              <button class="secondary myl-boost-btn" data-id="${l.id}">${boostButtonLabel()}</button>
+              <span class="myl-boost-results">🚀 This boost runs through ${until}, but won't show since the listing is marked sold — boosts are non-refundable, including when an item sells early (that's the boost working).</span>
             </div>`;
         }
+      } else if (l.boostIsActive) {
+        const until = new Date(l.boostedUntil).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        boostSectionHtml = `
+          <div class="myl-boost-status myl-boost-active">
+            <span class="myl-boost-flag">🚀 Boosted until ${until}</span>
+            ${boostResultsHtml('Since boosting')}
+          </div>`;
+      } else {
+        boostSectionHtml = `
+          <div class="myl-boost-status">
+            ${l.boostStartedAt ? boostResultsHtml('Last boost') : ''}
+            <button class="secondary myl-boost-btn" data-id="${l.id}">${boostButtonLabel()}</button>
+            ${boostDisclaimerHtml}
+          </div>`;
       }
       return `
-      <div class="myl-item ${l.status === 'sold' ? 'myl-sold' : ''} ${l.boostIsActive ? 'boosted-glow' : ''}" data-id="${l.id}">
+      <div class="myl-item ${l.status === 'sold' ? 'myl-sold' : ''} ${l.boostIsActive && l.status !== 'sold' ? 'boosted-glow' : ''}" data-id="${l.id}">
         <div class="myl-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
         <div class="myl-info">
           <div class="myl-title">${statusBadge}${escapeHtml(l.title)} — ${formatPriceDisplay(l)}</div>

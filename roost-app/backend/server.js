@@ -7,6 +7,12 @@ const { BOOST_FREE_TRIAL } = require('./config/boost');
 
 const app = express();
 
+// Registered before express.json() below, with its own raw-body parser —
+// Stripe's signature check needs the exact raw bytes it signed, which the
+// JSON parser would otherwise already have consumed and reserialized by
+// the time this route saw it.
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), require('./routes/stripeWebhook'));
+
 app.use(express.json({ limit: '10mb' })); // photos are sent as base64, need more than Express's tiny default
 app.use(cookieParser());
 app.use(authOptional); // attaches req.user (or null) on every request, from a real signed cookie

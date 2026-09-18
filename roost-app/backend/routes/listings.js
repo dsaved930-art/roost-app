@@ -8,34 +8,8 @@ const { containsUrl } = require('../utils/linkDetection');
 const { publicDisplayName } = require('../utils/displayName');
 const { geocodeCityState } = require('../utils/geocode');
 const { stripe, stripeConfigured } = require('../utils/stripe');
-const { BOOST_FREE_TRIAL } = require('../config/boost');
-
-// v1 is deliberately a single flat tier — simplest thing to actually test
-// whether sellers want this at all before building out multiple durations.
-const BOOST_PRICE_CENTS = 499; // $4.99
-const BOOST_DURATION_DAYS = 3;
-
-// Shared by the free-trial path and the post-payment confirm path — snapshots
-// current view/save/message counts and flips boosted_until forward. Kept in
-// one place so "what counts as activating a boost" can't drift between the
-// two callers.
-async function activateBoost(listingId, viewCount, stripeSessionId) {
-  const [saveCountResult, conversationCountResult] = await Promise.all([
-    pool.query('SELECT COUNT(*)::int AS count FROM saved_listings WHERE listing_id = $1', [listingId]),
-    pool.query('SELECT COUNT(DISTINCT buyer_id)::int AS count FROM conversations WHERE listing_id = $1', [listingId])
-  ]);
-  await pool.query(
-    `UPDATE listings SET
-       boosted_until = now() + make_interval(days => $1),
-       boost_started_at = now(),
-       boost_view_count_at_start = $2,
-       boost_save_count_at_start = $3,
-       boost_conversation_count_at_start = $4,
-       boost_stripe_session_id = $5
-     WHERE id = $6`,
-    [BOOST_DURATION_DAYS, viewCount, saveCountResult.rows[0].count, conversationCountResult.rows[0].count, stripeSessionId, listingId]
-  );
-}
+const { BOOST_FREE_TRIAL, BOOST_PRICE_CENTS, BOOST_DURATION_DAYS, BOOST_CHECKOUT_LOCK_MINUTES } = require('../config/boost');
+const { activateBoost } = require('../services/boost');
 
 // Browse — summaries only. Contact info is never included here, at all, for anyone.
 // Sold listings are excluded here so buyers don't wade through unavailable
@@ -188,19 +162,38 @@ router.post('/:id/boost/checkout', requireAuth, async (req, res) => {
     if (listing.boostedUntil && new Date(listing.boostedUntil) > new Date()) {
       return res.status(400).json({ error: `This listing is already boosted until ${new Date(listing.boostedUntil).toLocaleString()}.` });
     }
+    if (!BOOST_FREE_TRIAL && !stripeConfigured) return res.status(503).json({ error: 'Payments are not configured yet.' });
+
+    // Atomically claim this listing for a checkout attempt — closes the
+    // double-click/two-tabs race that the plain checks above can't, since
+    // two concurrent requests could both pass those checks before either
+    // has actually created anything. Postgres serializes concurrent UPDATEs
+    // on the same row, so only one of two simultaneous requests can ever
+    // win this claim; the loser sees 0 rows and is told to wait.
+    const claim = await pool.query(
+      `UPDATE listings SET boost_checkout_locked_until = now() + make_interval(mins => $1)
+       WHERE id = $2
+         AND (boost_checkout_locked_until IS NULL OR boost_checkout_locked_until <= now())
+         AND (boosted_until IS NULL OR boosted_until <= now())
+       RETURNING id`,
+      [BOOST_CHECKOUT_LOCK_MINUTES, listing.id]
+    );
+    if (claim.rows.length === 0) {
+      return res.status(409).json({ error: 'A boost checkout for this listing is already in progress — wait a few minutes and try again.' });
+    }
 
     // Trial period — skip Stripe entirely and activate immediately, free.
     // Flip BOOST_FREE_TRIAL off in config/boost.js when ready to charge again.
     if (BOOST_FREE_TRIAL) {
-      await activateBoost(listing.id, listing.viewCount, null);
+      await activateBoost(listing.id, null);
       return res.json({ free: true });
     }
 
-    if (!stripeConfigured) return res.status(503).json({ error: 'Payments are not configured yet.' });
     const base = (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
+      expires_at: Math.floor(Date.now() / 1000) + BOOST_CHECKOUT_LOCK_MINUTES * 60,
       line_items: [{
         price_data: {
           currency: 'usd',
@@ -223,27 +216,21 @@ router.post('/:id/boost/checkout', requireAuth, async (req, res) => {
   }
 });
 
-// Confirms a completed Checkout session and actually activates the boost.
-// Keyed off session id (not just "did a payment happen") so a page refresh
-// or double-click can't re-snapshot the view/save/message counts a second
-// time and wipe out an in-progress "gained since boosting" delta.
+// Confirms a completed Checkout session and actually activates the boost —
+// the success-page half of activation; the webhook (routes/stripeWebhook.js)
+// is the other half, in case the browser never makes it back here. Whichever
+// of the two arrives first does the real work; activateBoost's own
+// idempotency check makes the second one a safe no-op.
 router.post('/:id/boost/confirm', requireAuth, async (req, res) => {
   try {
     if (!stripeConfigured) return res.status(503).json({ error: 'Payments are not configured yet.' });
     const sessionId = String((req.body && req.body.sessionId) || '');
     if (!sessionId) return res.status(400).json({ error: 'Missing checkout session.' });
 
-    const listingResult = await pool.query(
-      'SELECT id, posted_by, view_count AS "viewCount", boost_stripe_session_id AS "boostStripeSessionId" FROM listings WHERE id = $1',
-      [req.params.id]
-    );
+    const listingResult = await pool.query('SELECT id, posted_by FROM listings WHERE id = $1', [req.params.id]);
     if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
     const listing = listingResult.rows[0];
     if (listing.posted_by !== req.user.id) return res.status(403).json({ error: 'You can only confirm a boost for your own listing.' });
-
-    if (listing.boostStripeSessionId === sessionId) {
-      return res.json({ ok: true }); // already activated from this exact payment
-    }
 
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     if (session.payment_status !== 'paid') return res.status(400).json({ error: 'That payment has not completed yet.' });
@@ -251,7 +238,7 @@ router.post('/:id/boost/confirm', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'That payment does not match this listing.' });
     }
 
-    await activateBoost(listing.id, listing.viewCount, sessionId);
+    await activateBoost(listing.id, sessionId);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
