@@ -231,6 +231,8 @@ ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_save_count_at_start INTEGER;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_conversation_count_at_start INTEGER;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_stripe_session_id TEXT;
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_checkout_locked_until TIMESTAMPTZ;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_result_acknowledged BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS boost_price_paid_cents INTEGER;
 CREATE INDEX IF NOT EXISTS idx_listings_boosted_until ON listings (boosted_until) WHERE boosted_until IS NOT NULL;
 
 -- Lets a signed-in user bookmark a listing for later without it being a
