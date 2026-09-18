@@ -1,5 +1,6 @@
 const { stripe, stripeConfigured } = require('../utils/stripe');
 const { activateBoost } = require('../services/boost');
+const { BOOST_PRICE_CENTS } = require('../config/boost');
 
 // The safety net for the one real gap in the success-page confirm flow: if
 // someone's browser closes or loses connection between paying and landing
@@ -36,7 +37,7 @@ module.exports = async function stripeWebhookHandler(req, res) {
     const listingId = session.metadata && session.metadata.listingId;
     if (session.payment_status === 'paid' && listingId) {
       try {
-        await activateBoost(listingId, session.id);
+        await activateBoost(listingId, session.id, BOOST_PRICE_CENTS);
       } catch (e) {
         console.error('Webhook boost activation failed:', e);
         // Still 200 — telling Stripe to retry won't fix a bug on our end,

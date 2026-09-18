@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS listings (
   boost_conversation_count_at_start INTEGER,
   boost_stripe_session_id TEXT,    -- last processed Checkout session id, so a page refresh can't double-activate a boost
   boost_checkout_locked_until TIMESTAMPTZ, -- short-lived claim while a checkout is in flight, closes the double-click-two-tabs race
+  boost_result_acknowledged BOOLEAN NOT NULL DEFAULT TRUE, -- flips to FALSE on activation; the "boost complete" popup flips it back once shown
+  boost_price_paid_cents INTEGER,  -- what the most recent boost actually cost (0 during the free trial) — admin stats only, not shown to sellers
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

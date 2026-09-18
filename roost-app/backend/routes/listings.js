@@ -8,8 +8,8 @@ const { containsUrl } = require('../utils/linkDetection');
 const { publicDisplayName } = require('../utils/displayName');
 const { geocodeCityState } = require('../utils/geocode');
 const { stripe, stripeConfigured } = require('../utils/stripe');
-const { BOOST_FREE_TRIAL, BOOST_PRICE_CENTS, BOOST_DURATION_DAYS, BOOST_CHECKOUT_LOCK_MINUTES } = require('../config/boost');
-const { activateBoost } = require('../services/boost');
+const { BOOST_FREE_TRIAL, BOOST_PRICE_CENTS, BOOST_DURATION_HOURS, BOOST_CHECKOUT_LOCK_MINUTES } = require('../config/boost');
+const { activateBoost, endBoostEarly, acknowledgeBoostResult } = require('../services/boost');
 
 // Browse — summaries only. Contact info is never included here, at all, for anyone.
 // Sold listings are excluded here so buyers don't wade through unavailable
@@ -72,6 +72,7 @@ router.get('/mine', requireAuth, async (req, res) => {
               l.boost_view_count_at_start AS "boostViewCountAtStart",
               l.boost_save_count_at_start AS "boostSaveCountAtStart",
               l.boost_conversation_count_at_start AS "boostConversationCountAtStart",
+              l.boost_result_acknowledged AS "boostResultAcknowledged",
               (SELECT COUNT(DISTINCT buyer_id)::int FROM conversations WHERE listing_id = l.id) AS "conversationCount",
               (SELECT COUNT(*)::int FROM saved_search_matches WHERE listing_id = l.id) AS "alertMatches",
               (SELECT COUNT(*)::int FROM saved_listings WHERE listing_id = l.id) AS "saveCount"
@@ -84,9 +85,13 @@ router.get('/mine', requireAuth, async (req, res) => {
     // total — computed here so the frontend just displays a number.
     const listings = result.rows.map(l => {
       if (!l.boostStartedAt) return { ...l, boostIsActive: false };
+      const boostIsActive = !!(l.boostedUntil && new Date(l.boostedUntil) > new Date());
       return {
         ...l,
-        boostIsActive: !!(l.boostedUntil && new Date(l.boostedUntil) > new Date()),
+        boostIsActive,
+        // True right up until the seller's seen the results popup once —
+        // covers a boost ending naturally or being ended early either way.
+        boostJustCompleted: !boostIsActive && !l.boostResultAcknowledged,
         boostViewsGained: Math.max(0, l.viewCount - (l.boostViewCountAtStart || 0)),
         boostSavesGained: Math.max(0, l.saveCount - (l.boostSaveCountAtStart || 0)),
         boostConversationsGained: Math.max(0, l.conversationCount - (l.boostConversationCountAtStart || 0))
@@ -185,7 +190,7 @@ router.post('/:id/boost/checkout', requireAuth, async (req, res) => {
     // Trial period — skip Stripe entirely and activate immediately, free.
     // Flip BOOST_FREE_TRIAL off in config/boost.js when ready to charge again.
     if (BOOST_FREE_TRIAL) {
-      await activateBoost(listing.id, null);
+      await activateBoost(listing.id, null, 0);
       return res.json({ free: true });
     }
 
@@ -200,7 +205,7 @@ router.post('/:id/boost/checkout', requireAuth, async (req, res) => {
           unit_amount: BOOST_PRICE_CENTS,
           product_data: {
             name: `Boost listing: ${listing.title}`,
-            description: `${BOOST_DURATION_DAYS} days of top placement on Roost`
+            description: `${BOOST_DURATION_HOURS} hours of top placement on Roost`
           }
         },
         quantity: 1
@@ -238,11 +243,45 @@ router.post('/:id/boost/confirm', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'That payment does not match this listing.' });
     }
 
-    await activateBoost(listing.id, sessionId);
+    await activateBoost(listing.id, sessionId, BOOST_PRICE_CENTS);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not confirm that boost.' });
+  }
+});
+
+// Lets a seller end their own active boost early — no refund (a separate,
+// explicit policy shown in the UI), just stops the exposure if they'd
+// rather not have it running anymore.
+router.post('/:id/boost/end', requireAuth, async (req, res) => {
+  try {
+    const listingResult = await pool.query('SELECT posted_by FROM listings WHERE id = $1', [req.params.id]);
+    if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    if (listingResult.rows[0].posted_by !== req.user.id) return res.status(403).json({ error: 'You can only end a boost on your own listing.' });
+
+    const ended = await endBoostEarly(req.params.id);
+    if (!ended) return res.status(400).json({ error: 'This listing is not currently boosted.' });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not end that boost.' });
+  }
+});
+
+// Marks a completed boost's results as seen, so the "boost complete" popup
+// only ever fires once per boost.
+router.post('/:id/boost/acknowledge-result', requireAuth, async (req, res) => {
+  try {
+    const listingResult = await pool.query('SELECT posted_by FROM listings WHERE id = $1', [req.params.id]);
+    if (listingResult.rows.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    if (listingResult.rows[0].posted_by !== req.user.id) return res.status(403).json({ error: 'You can only acknowledge results for your own listing.' });
+
+    await acknowledgeBoostResult(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not update that listing.' });
   }
 });
 

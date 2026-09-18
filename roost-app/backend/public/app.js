@@ -1574,6 +1574,15 @@ async function openStats() {
         <div class="stat-card"><div class="num">${s.totalMessages || 0}</div><div class="label">Total messages sent</div></div>
         <div class="stat-card"><div class="num">${s.reportedListings || 0}</div><div class="label">Listings reported at least once</div></div>
       </div>
+
+      <div class="stats-section-title">Boost${boostFreeTrial ? ' (free trial)' : ''}</div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="num">${s.boostActiveNow || 0}</div><div class="label">Boosted right now</div></div>
+        <div class="stat-card"><div class="num">${s.boostEverBoosted || 0}</div><div class="label">Listings ever boosted</div></div>
+        <div class="stat-card"><div class="num">${s.boostTotalViewsGained || 0}</div><div class="label">Total views gained from boosts</div></div>
+        <div class="stat-card"><div class="num">$${((s.boostTotalRevenueCents || 0) / 100).toFixed(2)}</div><div class="label">Boost revenue collected</div></div>
+      </div>
+      <div class="stats-note">Counts each listing's most recent boost only — a listing boosted more than once doesn't add up across boosts yet. Fine for a read on adoption during the test period; worth a proper history table before this doubles as real revenue accounting.</div>
     `;
   } catch (e) {
     body.innerHTML = `<div class="empty" style="padding:30px 10px;">${e.status === 403 ? 'Admin access required.' : 'Could not load stats.'}</div>`;
@@ -2198,7 +2207,7 @@ async function loadMyListings() {
       // Non-refundable, including an early sale — spelled out up front so it's
       // never a surprise raised after the fact. Doesn't apply during the free
       // trial, since there's nothing charged to refund.
-      const boostDisclaimerHtml = boostFreeTrial ? '' : `<div class="myl-boost-disclaimer">One-time charge, non-refundable — even if this sells or gets removed before the 3 days are up.</div>`;
+      const boostDisclaimerHtml = boostFreeTrial ? '' : `<div class="myl-boost-disclaimer">One-time charge, non-refundable — even if this sells or gets removed before the boost runs out.</div>`;
       let boostSectionHtml = '';
       if (l.status === 'sold') {
         // Sold mid-boost: the boost isn't refunded, but leaving the seller
@@ -2212,11 +2221,11 @@ async function loadMyListings() {
             </div>`;
         }
       } else if (l.boostIsActive) {
-        const until = new Date(l.boostedUntil).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
         boostSectionHtml = `
           <div class="myl-boost-status myl-boost-active">
-            <span class="myl-boost-flag">🚀 Boosted until ${until}</span>
+            <span class="myl-boost-flag myl-boost-countdown" data-boosted-until="${l.boostedUntil}">🚀 —</span>
             ${boostResultsHtml('Since boosting')}
+            <button class="secondary myl-boost-end-btn" data-id="${l.id}">Turn off boost</button>
           </div>`;
       } else {
         boostSectionHtml = `
@@ -2255,6 +2264,12 @@ async function loadMyListings() {
     listEl.querySelectorAll('.myl-boost-btn').forEach(btn => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); boostListing(btn.dataset.id, btn); });
     });
+    listEl.querySelectorAll('.myl-boost-end-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); endBoostEarly(btn.dataset.id); });
+    });
+    startBoostCountdowns();
+    const justCompleted = listings.find(l => l.boostJustCompleted);
+    if (justCompleted) showBoostResultPopup(justCompleted);
     listEl.querySelectorAll('.myl-item').forEach(item => {
       item.addEventListener('click', () => openDetail(item.dataset.id));
     });
@@ -2284,14 +2299,14 @@ async function loadMyListings() {
   }
 }
 
-// Keep the "3 days" wording in sync with BOOST_DURATION_DAYS in
-// routes/listings.js — the server is what actually enforces the price/dates,
+// Keep the "24 hours" wording in sync with BOOST_DURATION_HOURS in
+// config/boost.js — the server is what actually enforces the price/dates,
 // this is just the button's label. Reflects the free-trial flag from
 // /api/config so the button never claims to charge when it won't.
 function boostButtonLabel() {
   return boostFreeTrial
-    ? '🚀 Try Boost free — 3 days (trial period)'
-    : '🚀 Boost this listing — $4.99 for 3 days';
+    ? '🚀 Try Boost free — 24 hours (trial period)'
+    : '🚀 Boost this listing — $4.99 for 24 hours';
 }
 
 // Redirects to Stripe's hosted checkout for a one-time boost purchase — or,
@@ -2311,6 +2326,75 @@ async function boostListing(id, btn) {
     showToast((e.data && e.data.error) || 'Could not start checkout for that boost.');
     btn.disabled = false; btn.textContent = original;
   }
+}
+
+// Lets a seller stop their own boost early if they don't want the exposure
+// anymore — never refunded, just stops it. A native confirm() here matches
+// the same pattern used for deleting a listing elsewhere in this file.
+async function endBoostEarly(id) {
+  if (!confirm("End this boost now? It won't be refunded, but it'll stop showing right away.")) return;
+  try {
+    await api('/listings/' + id + '/boost/end', { method: 'POST' });
+    showToast('Boost ended.');
+    loadMyListings();
+  } catch (e) {
+    showToast((e.data && e.data.error) || 'Could not end that boost.');
+  }
+}
+
+function formatCountdown(msRemaining) {
+  if (msRemaining <= 0) return 'wrapping up…';
+  const totalSeconds = Math.floor(msRemaining / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m left`;
+  if (minutes > 0) return `${minutes}m ${seconds}s left`;
+  return `${seconds}s left`;
+}
+
+// One shared ticking interval for every countdown on the page at once,
+// restarted on each My Listings render rather than left to pile up across
+// visits. When a countdown actually reaches zero while someone's watching,
+// it reloads the list — which is also what surfaces the "boost complete"
+// popup the moment it's earned, not just on the next visit.
+let boostCountdownInterval = null;
+function startBoostCountdowns() {
+  clearInterval(boostCountdownInterval);
+  const els = document.querySelectorAll('.myl-boost-countdown');
+  if (els.length === 0) return;
+  const tick = () => {
+    let anyJustEnded = false;
+    document.querySelectorAll('.myl-boost-countdown').forEach(el => {
+      const remaining = new Date(el.dataset.boostedUntil).getTime() - Date.now();
+      el.textContent = `🚀 ${formatCountdown(remaining)}`;
+      if (remaining <= 0) anyJustEnded = true;
+    });
+    if (anyJustEnded) { clearInterval(boostCountdownInterval); loadMyListings(); }
+  };
+  tick();
+  boostCountdownInterval = setInterval(tick, 1000);
+}
+
+// The Hinge-style "Boost complete!" popup — shows once per boost (the
+// backend's boost_result_acknowledged flag makes sure of that), with the
+// actual before/after numbers rather than a multiplier claim we can't back
+// up credibly at our current traffic.
+function showBoostResultPopup(l) {
+  document.getElementById('boost-result-text').textContent =
+    `"${l.title}" picked up +${l.boostViewsGained} view${l.boostViewsGained === 1 ? '' : 's'}, +${l.boostSavesGained} save${l.boostSavesGained === 1 ? '' : 's'}, and +${l.boostConversationsGained} message${l.boostConversationsGained === 1 ? '' : 's'} while it was boosted.`;
+  document.getElementById('boost-result-overlay').classList.add('show');
+
+  const acknowledge = () => api('/listings/' + l.id + '/boost/acknowledge-result', { method: 'POST' }).catch(() => {});
+
+  document.getElementById('boost-result-ok').onclick = () => {
+    document.getElementById('boost-result-overlay').classList.remove('show');
+    acknowledge().then(loadMyListings); // re-check — there could be another completed boost queued up
+  };
+  document.getElementById('boost-result-again').onclick = () => {
+    document.getElementById('boost-result-overlay').classList.remove('show');
+    acknowledge().then(() => boostListing(l.id, document.createElement('button')));
+  };
 }
 
 async function updateListingStatus(id, status, soldToUserId) {
@@ -2918,7 +3002,7 @@ function handleBoostConfirmRedirect() {
   const confirmIt = async () => {
     try {
       await api('/listings/' + listingId + '/boost/confirm', { method: 'POST', body: JSON.stringify({ sessionId }) });
-      showToast('🚀 Listing boosted for 3 days!');
+      showToast('🚀 Listing boosted for 24 hours!');
       switchView('mylistings');
     } catch (e) {
       showToast((e.data && e.data.error) || 'Could not confirm that boost.');

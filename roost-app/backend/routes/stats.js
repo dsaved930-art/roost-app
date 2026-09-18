@@ -84,6 +84,20 @@ router.get('/', requireAdmin, async (req, res) => {
       `SELECT COUNT(*)::int AS total, COUNT(DISTINCT user_id)::int AS users FROM saved_searches`
     );
 
+    // Boost — these all reflect only each listing's MOST RECENT boost, not a
+    // full lifetime history (there's no separate boosts table yet), so a
+    // listing boosted twice only counts once here. Fine for a quick read on
+    // adoption during the test period; worth a real history table before
+    // this needs to double as actual revenue accounting.
+    const boostStatsResult = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE boosted_until > now())::int AS "activeNow",
+         COUNT(*) FILTER (WHERE boost_started_at IS NOT NULL)::int AS "everBoosted",
+         COALESCE(SUM(GREATEST(view_count - boost_view_count_at_start, 0)) FILTER (WHERE boost_started_at IS NOT NULL), 0)::int AS "totalViewsGained",
+         COALESCE(SUM(boost_price_paid_cents), 0)::int AS "totalRevenueCents"
+       FROM listings`
+    );
+
     const out = {};
     stats.rows.forEach(r => { out[r.key] = Number(r.value); });
     out.accounts = accounts.rows[0].count;
@@ -101,6 +115,10 @@ router.get('/', requireAdmin, async (req, res) => {
     out.verifiedBreeders = verifiedBreedersResult.rows[0].count;
     out.savedSearchTotal = savedSearchStatsResult.rows[0].total;
     out.savedSearchUsers = savedSearchStatsResult.rows[0].users;
+    out.boostActiveNow = boostStatsResult.rows[0].activeNow;
+    out.boostEverBoosted = boostStatsResult.rows[0].everBoosted;
+    out.boostTotalViewsGained = boostStatsResult.rows[0].totalViewsGained;
+    out.boostTotalRevenueCents = boostStatsResult.rows[0].totalRevenueCents;
     res.json(out);
   } catch (e) {
     console.error(e);
