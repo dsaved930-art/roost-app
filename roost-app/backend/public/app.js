@@ -1194,8 +1194,11 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
       switchView('mylistings');
       loadMyListings();
     } else {
+      const wasLoggedOut = !currentUser;
       await api('/listings', { method: 'POST', body: JSON.stringify(body) });
       await refreshCurrentUser(); // posting without an account may have just created/signed one in
+      trackConversion('listingPosted');
+      if (wasLoggedOut && currentUser) trackConversion('accountCreated'); // signed up as part of posting
       document.getElementById('post-form-wrap').style.display = 'none';
       document.getElementById('post-success').style.display = 'block';
     }
@@ -1312,6 +1315,7 @@ async function handleSignup() {
   try {
     const data = await api('/auth/signup', { method: 'POST', body: JSON.stringify({ name, email, password }) });
     currentUser = data.user;
+    trackConversion('accountCreated');
     onAuthSuccess();
   } catch (e) {
     err.textContent = (e.data && e.data.error) || 'Something went wrong creating your account.';
@@ -1819,6 +1823,7 @@ const LEGAL_CONTENT = {
     <h3>Privacy Policy (summary)</h3>
     <p>We collect what you submit in a listing and account signup — species, description, city/state, and the contact information you choose to include. Contact information in a listing is only shown to signed-in users.</p>
     <p>We don't sell your personal information. You can request deletion of your listing and account at any time.</p>
+    <p>We advertise Roost using Google Ads. To measure whether our ads work, Google may set cookies or use similar technology on your device when you visit Roost, and we tell Google when an action happens on the site, such as an account being created, a message being sent, or a listing being posted. We don't share the content of your messages or listings for this purpose. You can control ad personalization at <a href="https://adssettings.google.com" target="_blank" rel="noopener">adssettings.google.com</a> or by blocking cookies in your browser.</p>
     <p>Roost is not intended for anyone under 18, and we don't knowingly collect information from anyone under that age.</p>
     <div class="legal-note">This is a condensed summary. The complete Privacy Policy is available as a separate document.</div>
   `,
@@ -1859,6 +1864,21 @@ document.getElementById('open-privacy-from-form').addEventListener('click', (e) 
 // visitors can type a message right away — signing in is only asked for at
 // send time (via the auth modal), rather than gating the whole box behind a
 // separate button the way it used to.
+// Google Ads conversion tracking. Labels come from Google Ads > Goals > Conversions.
+// A missing label or a blocked tag must never break the app, so this fails silently.
+const GOOGLE_ADS_ID = 'AW-18462050490';
+const CONVERSION_LABELS = {
+  messageSent: 'Lg88CKGj1_0cELqRsuNE',
+  accountCreated: '-sqzCLKy2_0cELqRsuNE',
+  listingPosted: 'pY9SCLWy2_0cELqRsuNE'
+};
+function trackConversion(name) {
+  try {
+    const label = CONVERSION_LABELS[name];
+    if (label && typeof gtag === 'function') gtag('event', 'conversion', { send_to: GOOGLE_ADS_ID + '/' + label });
+  } catch (e) { /* tracking is best-effort */ }
+}
+
 function wireSellerCompose(listingId) {
   const sendBtn = document.getElementById('inline-compose-send');
   if (!sendBtn) return; // not rendered at all on your own listing
@@ -1879,6 +1899,7 @@ function wireSellerCompose(listingId) {
     sendBtn.disabled = true; sendBtn.textContent = 'Sending…';
     try {
       await api('/listings/' + listingId + '/message', { method: 'POST', body: JSON.stringify({ body: text }) });
+      trackConversion('messageSent');
       document.getElementById('seller-compose').innerHTML =
         `<p style="color:var(--muted);font-size:13px;margin:0;">Message sent. <a href="#" id="go-to-inbox" style="color:var(--primary-dark);font-weight:600;">View in Messages</a></p>`;
       document.getElementById('go-to-inbox').addEventListener('click', (e) => { e.preventDefault(); document.getElementById('tab-messages').click(); });
