@@ -151,7 +151,7 @@
 
 <main class="wrap post-view" id="view-post" style="display:none;">
   <h2 id="post-view-title">Post a bird</h2>
-  <p id="post-view-subtitle">Your listing and contact details will be visible to everyone who visits Roost.</p>
+  <p id="post-view-subtitle">Your listing is visible to everyone who visits Roost. Contact details are optional and only shown to signed-in users.</p>
 
   <div id="post-form-wrap">
     <div class="warn-banner" id="scam-warning">
@@ -284,15 +284,16 @@
 
     <div class="row2">
       <div class="field">
-        <label for="f-contact-method">Contact method <span class="required-asterisk">*</span></label>
+        <label for="f-contact-method">Contact method <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
         <select id="f-contact-method">
           <option value="Email">Email</option>
           <option value="Phone">Phone</option>
         </select>
       </div>
       <div class="field">
-        <label for="f-contact-value">Contact details <span class="required-asterisk">*</span></label>
+        <label for="f-contact-value">Contact details <span style="color:var(--muted);font-weight:400;">(optional — shown to signed-in Roost users)</span></label>
         <input type="text" id="f-contact-value" placeholder="you@email.com">
+        <div class="hint">Buyers can always message you through Roost, so you can leave this blank.</div>
       </div>
     </div>
 

@@ -340,6 +340,7 @@ router.get('/:id', async (req, res) => {
       createdAt: l.created_at, reportCount: reportsResult.rows[0].count,
       sold: l.status === 'sold', status: l.status, soldAt: l.sold_at, shippingAvailable: l.shipping_available,
       contactLocked: !req.user,
+      hasContact: !!(l.contact_value && String(l.contact_value).trim()),
       postedByMe: !!(req.user && l.posted_by === req.user.id),
       savedByMe,
       seller
@@ -363,7 +364,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     const b = req.body || {};
-    const required = ['title', 'category', 'city', 'state', 'description', 'contactMethod', 'contactValue'];
+    const required = ['title', 'category', 'city', 'state', 'description'];
     for (const f of required) {
       if (!b[f] || !String(b[f]).trim()) return res.status(400).json({ error: `Missing required field: ${f}` });
     }
@@ -393,6 +394,9 @@ router.post('/', requireAuth, async (req, res) => {
     // so posted_by is always known and poster name can default to the account
     // name if the seller left that field blank.
     const posterName = (b.posterName && String(b.posterName).trim()) || req.user.name;
+    // Contact details are optional now — buyers can always use in-app messaging.
+    const contactMethod = b.contactMethod === 'Phone' ? 'Phone' : 'Email';
+    const contactValue = String(b.contactValue || '').trim();
 
     // Tri-state fields (yes/no/unknown) — anything unrecognized quietly falls
     // back to 'unknown' rather than erroring, since this is optional metadata.
@@ -412,7 +416,7 @@ router.post('/', requireAuth, async (req, res) => {
       [
         b.title, b.category, b.breed || '', b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
         b.city, b.state, b.description, coverThumb, coverFull,
-        b.category === 'RAP' ? b.permitNumber : null, posterName, b.contactMethod, b.contactValue, req.user.id,
+        b.category === 'RAP' ? b.permitNumber : null, posterName, contactMethod, contactValue, req.user.id,
         dnaSexed, handTame, !!b.shippingAvailable, (b.priceType === 'total' ? 'total' : 'each'), condition
       ]
     );
@@ -432,8 +436,8 @@ router.post('/', requireAuth, async (req, res) => {
     // Deliberately never does this for email, since that's tied to login
     // identity and shouldn't be silently overwritten by whatever someone
     // types into a listing's contact field.
-    if (b.contactMethod === 'Phone' && b.contactValue) {
-      pool.query('UPDATE users SET phone = $1 WHERE id = $2', [b.contactValue, req.user.id])
+    if (contactMethod === 'Phone' && contactValue) {
+      pool.query('UPDATE users SET phone = $1 WHERE id = $2', [contactValue, req.user.id])
         .catch(err => console.error('Could not save phone to profile:', err));
     }
 
@@ -483,7 +487,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 
     const b = req.body || {};
-    const required = ['title', 'category', 'city', 'state', 'description', 'contactMethod', 'contactValue'];
+    const required = ['title', 'category', 'city', 'state', 'description'];
     for (const f of required) {
       if (!b[f] || !String(b[f]).trim()) return res.status(400).json({ error: `Missing required field: ${f}` });
     }
@@ -502,6 +506,9 @@ router.put('/:id', requireAuth, async (req, res) => {
     const coverFull = photos.length > 0 ? photos[0].full : null;
 
     const posterName = (b.posterName && String(b.posterName).trim()) || req.user.name;
+    // Contact details are optional now — buyers can always use in-app messaging.
+    const contactMethod = b.contactMethod === 'Phone' ? 'Phone' : 'Email';
+    const contactValue = String(b.contactValue || '').trim();
     const VALID_TRISTATE = ['yes', 'no', 'unknown'];
     const dnaSexed = VALID_TRISTATE.includes(b.dnaSexed) ? b.dnaSexed : 'unknown';
     const handTame = VALID_TRISTATE.includes(b.handTame) ? b.handTame : 'unknown';
@@ -519,7 +526,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       [
         b.title, b.category, b.breed || '', b.age || '', b.sex || '', !!b.free, b.free ? 0 : Number(b.price), !!b.openToTrade,
         b.city, b.state, b.description, coverThumb, coverFull,
-        b.category === 'RAP' ? b.permitNumber : null, posterName, b.contactMethod, b.contactValue,
+        b.category === 'RAP' ? b.permitNumber : null, posterName, contactMethod, contactValue,
         dnaSexed, handTame, !!b.shippingAvailable, (b.priceType === 'total' ? 'total' : 'each'), condition, req.params.id
       ]
     );
@@ -535,8 +542,8 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     res.json({ id: listing.id });
 
-    if (b.contactMethod === 'Phone' && b.contactValue) {
-      pool.query('UPDATE users SET phone = $1 WHERE id = $2', [b.contactValue, req.user.id])
+    if (contactMethod === 'Phone' && contactValue) {
+      pool.query('UPDATE users SET phone = $1 WHERE id = $2', [contactValue, req.user.id])
         .catch(err => console.error('Could not save phone to profile:', err));
     }
 

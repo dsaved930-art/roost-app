@@ -251,8 +251,8 @@ function updatePostFormForCategory() {
 
   document.getElementById('post-view-title').textContent = isSupplies ? 'Post supplies or equipment' : 'Post a bird';
   document.getElementById('post-view-subtitle').textContent = isSupplies
-    ? 'Cages, incubators, brooders, nest boxes, feed, and other bird-keeping supplies & equipment, etc. Listing and contact details will be visible to everyone who visits Roost.'
-    : 'Your listing and contact details will be visible to everyone who visits Roost.';
+    ? 'Cages, incubators, brooders, nest boxes, feed, and other bird-keeping supplies & equipment, etc. Your listing is visible to everyone who visits Roost. Contact details are optional and only shown to signed-in users.'
+    : 'Your listing is visible to everyone who visits Roost. Contact details are optional and only shown to signed-in users.';
 
   document.getElementById('f-title').placeholder = isSupplies
     ? 'Large flight cage, barely used'
@@ -529,7 +529,7 @@ function buildListingPageHtml(l) {
          Call
        </a>` : '';
 
-  const contactBoxHtml = (l.contactLocked === undefined) ? '' : (!l.contactLocked ? `
+  const contactBoxHtml = (l.contactLocked === undefined || l.hasContact === false) ? '' : (!l.contactLocked ? `
     <div class="contact-box">
       <div class="label">${l.contactMethod || 'Contact'}</div>
       <div class="value-row">
@@ -870,9 +870,7 @@ function openPostForm(presetCategory) {
 function prefillPosterFields() {
   if (!currentUser) return;
   const nameField = document.getElementById('f-poster-name');
-  const emailField = document.getElementById('f-contact-value');
   if (nameField && !nameField.value) nameField.value = currentUser.name;
-  if (emailField && !emailField.value) emailField.value = currentUser.email;
 }
 document.getElementById('tab-messages').addEventListener('click', () => switchView('messages'));
 function switchView(view) {
@@ -947,11 +945,11 @@ document.getElementById('f-contact-method').addEventListener('change', (e) => {
   if (e.target.value === 'Phone') {
     valueField.placeholder = '(555) 555-0100';
     valueField.type = 'tel';
-    valueField.value = currentUser && currentUser.phone ? formatPhoneDisplay(currentUser.phone) : '';
+    valueField.value = '';
   } else {
     valueField.placeholder = 'you@email.com';
     valueField.type = 'text';
-    valueField.value = currentUser && currentUser.email ? currentUser.email : '';
+    valueField.value = '';
   }
 });
 
@@ -1001,6 +999,35 @@ function resizeImageToDataUrl(img, maxWidth, quality) {
   canvas.getContext('2d').drawImage(img, 0, 0, w, h);
   return { canvas, dataUrl: canvas.toDataURL('image/jpeg', quality) };
 }
+// iPhone photos are usually HEIC, which Chrome (and most non-Apple browsers) can't decode. The
+// converter is ~1.3MB, so it's only downloaded the first time someone actually picks a HEIC file.
+// Pinned to an exact version with an integrity hash so a compromised CDN can't swap the code.
+function isHeicFile(file) {
+  const t = (file.type || '').toLowerCase();
+  return t === 'image/heic' || t === 'image/heif' || /\.(heic|heif)$/i.test(file.name || '');
+}
+let heicConverterPromise = null;
+function loadHeicConverter() {
+  if (window.heic2any) return Promise.resolve();
+  if (!heicConverterPromise) {
+    heicConverterPromise = new Promise((resolve, reject) => {
+      const el = document.createElement('script');
+      el.src = 'https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js';
+      el.integrity = 'sha512-VjmsArkf8Vv2yyvbXCyVxp+R3n4N2WyS1GEQ+YQxa7Hu0tx836WpY4nW9/T1W5JBmvuIsxkVH/DlHgp7NEMjDw==';
+      el.crossOrigin = 'anonymous';
+      el.onload = () => resolve();
+      el.onerror = () => { heicConverterPromise = null; reject(new Error('Could not load the HEIC converter')); };
+      document.head.appendChild(el);
+    });
+  }
+  return heicConverterPromise;
+}
+async function convertHeicToJpeg(file) {
+  await loadHeicConverter();
+  const out = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+  return Array.isArray(out) ? out[0] : out; // a multi-frame HEIC (e.g. a Live Photo) comes back as an array
+}
+
 const MAX_PHOTOS = 5;
 
 function renderPhotoGrid() {
@@ -1049,9 +1076,17 @@ document.getElementById('f-photo-file').addEventListener('change', async (e) => 
   }
 
   for (const file of toProcess) {
-    if (!file.type.startsWith('image/')) { errEl.textContent = 'Please choose image files only.'; continue; }
+    if (!file.type.startsWith('image/') && !isHeicFile(file)) { errEl.textContent = 'Please choose image files only.'; continue; }
     try {
-      const img = await readImageFile(file);
+      let img;
+      try {
+        img = await readImageFile(file);
+      } catch (nativeErr) {
+        if (!isHeicFile(file)) throw nativeErr;
+        errEl.textContent = 'Converting your iPhone photo…';
+        img = await readImageFile(await convertHeicToJpeg(file));
+        errEl.textContent = '';
+      }
       // The full-size image is generated first, directly from the original —
       // the thumbnail is then generated FROM that already-downscaled result,
       // not independently from the original again. A very large modern phone
@@ -1069,6 +1104,7 @@ document.getElementById('f-photo-file').addEventListener('change', async (e) => 
       });
     } catch (err) {
       errEl.textContent = 'Could not process one of those images — try a different photo.';
+      showToast('Could not process one of those images — try a different photo.');
     }
   }
   document.getElementById('f-photo-file').value = '';
@@ -1159,7 +1195,6 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
   if (!body.city) problems.push({ fieldId: 'f-city', message: 'Please enter a city.' });
   if (!body.state) problems.push({ fieldId: 'f-state', message: 'Please enter a state.' });
   if (!body.description) problems.push({ fieldId: 'f-desc', message: 'Please add a description.' });
-  if (!body.contactValue) problems.push({ fieldId: 'f-contact-value', message: 'Please enter how buyers can reach you.' });
   if (body.category === 'RAP' && !body.permitNumber) {
     problems.push({ fieldId: 'f-permit', message: 'A falconry/raptor permit number is required to list a bird of prey.' });
   }
@@ -1404,8 +1439,6 @@ async function handleResetPassword(token) {
 function onAuthSuccess() {
   document.getElementById('auth-overlay').classList.remove('show');
   updateAuthArea();
-  const emailField = document.getElementById('f-contact-value');
-  if (emailField && !emailField.value && currentUser) emailField.value = currentUser.email;
   const nameField = document.getElementById('f-poster-name');
   if (nameField && !nameField.value && currentUser) nameField.value = currentUser.name;
   if (authSuccessCallback) { const cb = authSuccessCallback; authSuccessCallback = null; cb(); }
@@ -2510,7 +2543,7 @@ async function duplicateListing(id) {
     document.getElementById('f-poster-name').value = l.posterName || (currentUser ? currentUser.name : '');
     document.getElementById('f-contact-method').value = l.contactMethod || 'Email';
     document.getElementById('f-contact-method').dispatchEvent(new Event('change'));
-    document.getElementById('f-contact-value').value = l.contactValue || (currentUser ? currentUser.email : '');
+    document.getElementById('f-contact-value').value = l.contactValue || '';
     if (l.category === 'RAP' && l.permitNumber) document.getElementById('f-permit').value = l.permitNumber;
     if (l.category === 'SUP' && l.condition) document.getElementById('f-condition').value = l.condition;
 
@@ -2559,7 +2592,7 @@ async function editListing(id) {
     document.getElementById('f-poster-name').value = l.posterName || (currentUser ? currentUser.name : '');
     document.getElementById('f-contact-method').value = l.contactMethod || 'Email';
     document.getElementById('f-contact-method').dispatchEvent(new Event('change'));
-    document.getElementById('f-contact-value').value = l.contactValue || (currentUser ? currentUser.email : '');
+    document.getElementById('f-contact-value').value = l.contactValue || '';
     if (l.category === 'RAP' && l.permitNumber) document.getElementById('f-permit').value = l.permitNumber;
     if (l.category === 'SUP' && l.condition) document.getElementById('f-condition').value = l.condition;
 
