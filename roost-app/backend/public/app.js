@@ -2329,10 +2329,13 @@ async function boostListing(id, btn) {
 }
 
 // Lets a seller stop their own boost early if they don't want the exposure
-// anymore — never refunded, just stops it. A native confirm() here matches
-// the same pattern used for deleting a listing elsewhere in this file.
+// anymore — never refunded, just stops it. The no-refund confirm() (same
+// pattern as deleting a listing elsewhere in this file) only appears once
+// boosts actually cost money; during the free trial there's nothing to warn
+// about, so it just stops. Tied to boostFreeTrial, so it comes back on its
+// own when BOOST_FREE_TRIAL is switched off in config/boost.js.
 async function endBoostEarly(id) {
-  if (!confirm("End this boost now? It won't be refunded, but it'll stop showing right away.")) return;
+  if (!boostFreeTrial && !confirm("End this boost now? It won't be refunded, but it'll stop showing right away.")) return;
   try {
     await api('/listings/' + id + '/boost/end', { method: 'POST' });
     showToast('Boost ended.');
