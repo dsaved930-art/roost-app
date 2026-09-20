@@ -2900,7 +2900,58 @@ document.getElementById('account-overlay').addEventListener('click', (e) => { if
 async function openAccountModal() {
   document.getElementById('account-overlay').classList.add('show');
   renderEmailStatus();
+  renderNotificationPrefs(); // deliberately not awaited: if it fails it can't hold up the rest of this window
   await renderVerificationSection();
+}
+
+// Email notification settings. Each section of this window loads on its own and handles its own
+// errors, so one failing (for example a settings lookup) never blanks out the others.
+async function renderNotificationPrefs() {
+  const wrap = document.getElementById('notify-prefs-body');
+  wrap.innerHTML = 'Loading…';
+  let prefs;
+  try {
+    prefs = await api('/users/me/preferences');
+  } catch (e) {
+    wrap.innerHTML = `<div class="empty" style="padding:12px 10px;">Couldn't load your notification settings right now. Please try again in a moment.</div>`;
+    return;
+  }
+  wrap.innerHTML = `
+    <label class="notify-row" for="notify-new-messages">
+      <input type="checkbox" id="notify-new-messages" ${prefs.notifyNewMessages ? 'checked' : ''}>
+      <span><strong>New messages</strong><span class="notify-hint">Email me when someone sends me a message. You'll still see every message in Roost either way.</span></span>
+    </label>
+    <div class="notify-hint" style="margin-top:8px;">Emails about saved searches are controlled on each saved search.</div>
+    <div class="auth-error" id="notify-error"></div>`;
+
+  const box = document.getElementById('notify-new-messages');
+  const errEl = document.getElementById('notify-error');
+  box.addEventListener('change', async () => {
+    const wanted = box.checked;
+    errEl.textContent = '';
+    box.disabled = true;
+    try {
+      const saved = await api('/users/me/preferences', { method: 'PUT', body: JSON.stringify({ notifyNewMessages: wanted }) });
+      box.checked = saved.notifyNewMessages;
+      showToast(saved.notifyNewMessages ? 'You\'ll get emails for new messages.' : 'Message emails turned off.');
+    } catch (e) {
+      box.checked = !wanted; // put it back so the switch always shows what's really saved
+      errEl.textContent = (e.data && e.data.error) || 'Could not save that. Please try again.';
+    } finally {
+      box.disabled = false;
+    }
+  });
+}
+
+// The "turn these off" link in message emails lands here with ?account=notifications.
+function handleAccountRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.get('account')) return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('account');
+  window.history.replaceState({}, '', url.toString());
+  if (!currentUser) { openAuthModal('login', () => openAccountModal()); return; }
+  openAccountModal();
 }
 
 function renderEmailStatus() {
@@ -2928,8 +2979,6 @@ function renderEmailStatus() {
   });
 }
 
-let pendingVerifyDoc = null;
-
 async function renderVerificationSection() {
   const wrap = document.getElementById('verification-body');
   wrap.innerHTML = 'Loading…';
@@ -2954,36 +3003,15 @@ async function renderVerificationSection() {
     ? `<div class="status-box warn">Your previous application wasn't approved: ${escapeHtml(status.note || 'No reason given.')} You're welcome to update the details below and reapply.</div>`
     : '';
 
-  pendingVerifyDoc = null;
   wrap.innerHTML = `
     ${rejectedNote}
     <div class="verify-form">
       <div class="field"><label for="verify-business-name">Breeder / business name</label><input type="text" id="verify-business-name" placeholder="e.g. Sacramento Valley Aviary" value="${escapeAttr(status.businessName || '')}"></div>
       <div class="field"><label for="verify-phone">Phone number</label><input type="text" id="verify-phone" placeholder="(555) 555-0100" value="${escapeAttr(status.phone || '')}"></div>
-      <div class="field">
-        <label>Supporting document (optional)</label>
-        <div class="verify-doc-dropzone" id="verify-doc-dropzone">Click to upload a license, health certificate, or similar — helps applications get approved faster</div>
-        <input type="file" id="verify-doc-file" accept="image/*" style="display:none;">
-      </div>
       <div class="auth-error" id="verify-apply-error"></div>
       <button class="primary" id="verify-apply-submit" style="width:100%;">Submit for review</button>
     </div>
   `;
-
-  const dropzone = document.getElementById('verify-doc-dropzone');
-  const fileInput = document.getElementById('verify-doc-file');
-  dropzone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files[0];
-    if (!file || !file.type.startsWith('image/')) return;
-    try {
-      const img = await readImageFile(file);
-      pendingVerifyDoc = resizeImageToDataUrl(img, 900, 0.7).dataUrl;
-      dropzone.innerHTML = `<img class="vi-doc" src="${pendingVerifyDoc}" alt="">`;
-    } catch (e) {
-      showToast('Could not process that image.');
-    }
-  });
 
   document.getElementById('verify-apply-submit').addEventListener('click', async () => {
     const err = document.getElementById('verify-apply-error');
@@ -2995,7 +3023,7 @@ async function renderVerificationSection() {
     const btn = document.getElementById('verify-apply-submit');
     btn.disabled = true; btn.textContent = 'Submitting…';
     try {
-      await api('/verification/apply', { method: 'POST', body: JSON.stringify({ businessName, phone, document: pendingVerifyDoc }) });
+      await api('/verification/apply', { method: 'POST', body: JSON.stringify({ businessName, phone }) });
       showToast('Application submitted — we\'ll review it soon.');
       renderVerificationSection();
     } catch (e) {
@@ -3315,7 +3343,7 @@ populateCategorySelect();
 renderPhotoGrid();
 routeFromLocation();
 loadRecentlySold();
-refreshCurrentUser().then(() => { handleVerifyRedirect(); handleConversationRedirect(); handleBoostConfirmRedirect(); });
+refreshCurrentUser().then(() => { handleVerifyRedirect(); handleConversationRedirect(); handleBoostConfirmRedirect(); handleAccountRedirect(); });
 handleResetTokenRedirect();
 setupGooglePlacesIfConfigured();
 api('/stats/pageview', { method: 'POST' }).catch(() => {});

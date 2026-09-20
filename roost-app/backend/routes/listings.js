@@ -712,6 +712,7 @@ router.post('/:id/message', requireAuth, async (req, res) => {
         const seller = sellerResult.rows[0];
         if (!seller) return;
         return sendNewMessageEmail({
+          recipientId: listing.posted_by,
           recipientEmail: seller.email, recipientName: seller.name,
           senderName: req.user.name, listingTitle: listing.title,
           messageBody: body, conversationId

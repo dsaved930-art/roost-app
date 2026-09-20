@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   verification_note           TEXT,                      -- admin's note, mainly used for rejection reasons
   verification_requested_at   TIMESTAMPTZ,
   verification_reviewed_at    TIMESTAMPTZ,
+  notify_new_messages         BOOLEAN NOT NULL DEFAULT TRUE,   -- email me when I get a new message
   created_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -200,6 +201,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_document TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_note TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_requested_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_reviewed_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_new_messages BOOLEAN NOT NULL DEFAULT TRUE;
 
 ALTER TABLE listings ADD COLUMN IF NOT EXISTS open_to_trade BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_listings_open_to_trade ON listings (open_to_trade) WHERE open_to_trade = TRUE;

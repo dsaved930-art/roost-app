@@ -2,6 +2,34 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { publicDisplayName } = require('../utils/displayName');
+const { requireAuth } = require('../middleware/auth');
+const { getNotificationPrefs, setMessageEmailPref } = require('../utils/notificationPrefs');
+
+// The signed-in user's own email notification settings. Registered before '/:id/profile' so
+// 'me' can never be mistaken for a user id.
+router.get('/me/preferences', requireAuth, async (req, res) => {
+  try {
+    const prefs = await getNotificationPrefs(req.user.id);
+    if (!prefs) return res.status(404).json({ error: 'Account not found.' });
+    res.json(prefs);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not load your notification settings.' });
+  }
+});
+
+router.put('/me/preferences', requireAuth, async (req, res) => {
+  try {
+    const value = req.body && req.body.notifyNewMessages;
+    if (typeof value !== 'boolean') return res.status(400).json({ error: 'notifyNewMessages must be true or false.' });
+    const prefs = await setMessageEmailPref(req.user.id, value);
+    if (!prefs) return res.status(404).json({ error: 'Account not found.' });
+    res.json(prefs);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not save your notification settings.' });
+  }
+});
 
 // Public — anyone can view a seller's profile and reviews, signed in or not.
 // This is a trust signal meant to be seen before deciding to message someone.

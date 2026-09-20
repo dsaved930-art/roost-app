@@ -191,6 +191,7 @@ router.post('/:id/messages', requireAuth, async (req, res) => {
       const listing = listingResult.rows[0];
       if (!recipient || !listing) return;
       return sendNewMessageEmail({
+        recipientId,
         recipientEmail: recipient.email, recipientName: recipient.name,
         senderName: req.user.name, listingTitle: listing.title,
         messageBody: body, conversationId: req.params.id
