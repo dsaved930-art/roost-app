@@ -28,6 +28,11 @@ const CATEGORIES = [
   { code: 'OTH', label: 'Other', color: 'var(--oth)', dark: 'var(--oth-dark2)', icon: '🐦' },
   { code: 'SUP', label: 'Supplies & equipment', color: 'var(--sup)', dark: 'var(--sup-dark)', icon: '🧰' },
 ];
+// Birds of prey are switched off for now: no listings exist yet, and they carry the most legal and
+// ad-policy risk. Flip this to true (and RAPTORS_ENABLED in routes/listings.js) to bring the
+// category back; the permit-number logic below is all still in place.
+const RAPTORS_ENABLED = false;
+const VISIBLE_CATEGORIES = CATEGORIES.filter(c => RAPTORS_ENABLED || c.code !== 'RAP');
 const CONDITION_LABELS = { new: 'New', used_like_new: 'Used – like new', used_good: 'Used – good', needs_repair: 'Used – needs repair' };
 function conditionLabel(code) { return CONDITION_LABELS[code] || 'Condition not specified'; }
 // Deliberately broad, but this is still just a keyword list — it catches
@@ -204,7 +209,7 @@ let boostFreeTrial = false; // set from /api/config — while true, Boost is fre
 
 function renderChips() {
   const wrap = document.getElementById('category-chips');
-  wrap.innerHTML = CATEGORIES.map(c => `
+  wrap.innerHTML = VISIBLE_CATEGORIES.map(c => `
     <button class="chip ${currentCategory === c.code ? 'active' : ''}" data-code="${c.code}">
       <span class="dot" style="background:${c.color}"></span>${c.label}
     </button>`).join('');
@@ -220,7 +225,7 @@ function renderChips() {
 
 function populateCategorySelect() {
   const sel = document.getElementById('f-category');
-  sel.innerHTML = CATEGORIES.map(c => `<option value="${c.code}">${c.label}</option>`).join('');
+  sel.innerHTML = VISIBLE_CATEGORIES.map(c => `<option value="${c.code}">${c.label}</option>`).join('');
   sel.addEventListener('change', updatePostFormForCategory);
 }
 
@@ -1145,6 +1150,16 @@ function clearAllPostFormErrors() {
 });
 
 // ===================== POST A LISTING =====================
+// The Cancel button only makes sense while editing an existing listing.
+function syncEditButtons() {
+  document.getElementById('cancel-edit').style.display = editingListingId ? 'inline-block' : 'none';
+}
+document.getElementById('cancel-edit').addEventListener('click', () => {
+  resetPostForm(); // clears editingListingId and the form, so nothing half-edited lingers
+  switchView('mylistings');
+  loadMyListings();
+});
+
 document.getElementById('submit-listing').addEventListener('click', async () => {
   const errEl = document.getElementById('post-error');
   errEl.textContent = '';
@@ -1242,6 +1257,7 @@ document.getElementById('submit-listing').addEventListener('click', async () => 
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = editingListingId ? 'Save changes' : 'Publish listing';
+    syncEditButtons();
   }
 });
 
@@ -1272,6 +1288,7 @@ function resetPostForm() {
   document.getElementById('post-success').style.display = 'none';
   editingListingId = null;
   document.getElementById('submit-listing').textContent = 'Publish listing';
+  syncEditButtons();
 }
 document.getElementById('post-another').addEventListener('click', resetPostForm);
 
@@ -1870,7 +1887,7 @@ const LEGAL_CONTENT = {
       <li>Species whose sale is restricted or banned under applicable state law</li>
       <li>Any bird the seller doesn't legally own or can't legally transfer</li>
     </ul>
-    <p>Hawks, falcons, and owls may be listed only under Birds of Prey / Raptors, and only by a permitted falconer providing a valid falconry permit number at the time of posting.</p>
+    <p>Hawks, falcons, owls, and other birds of prey are not accepted on Roost at this time.</p>
   `,
   dmca: `
     <h3>DMCA / Copyright Policy (summary)</h3>
@@ -2519,6 +2536,7 @@ async function duplicateListing(id) {
   showToast('Loading listing details to duplicate…');
   editingListingId = null;
   document.getElementById('submit-listing').textContent = 'Publish listing';
+  syncEditButtons();
   try {
     const data = await api('/listings/' + id);
     const l = data.listing;
@@ -2607,6 +2625,7 @@ async function editListing(id) {
 
     editingListingId = id;
     document.getElementById('submit-listing').textContent = 'Save changes';
+    syncEditButtons();
     showToast('Editing your listing — update anything, then save.');
   } catch (e) {
     showToast('Could not load that listing to edit.');

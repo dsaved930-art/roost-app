@@ -361,6 +361,11 @@ router.get('/:id', async (req, res) => {
 // an email as their contact method, this creates (or reuses) an account for them and
 // signs them in, the same behavior the prototype had — except this version is real:
 // the account genuinely exists in the database, with a real id, not just in memory.
+// Birds of prey are switched off for now (see RAPTORS_ENABLED in public/app.js). The UI hides the
+// category, but this is the real gate — the API must refuse it too.
+const RAPTORS_ENABLED = false;
+const RAPTORS_OFF_MESSAGE = 'Birds of prey are not accepted on Roost at this time.';
+
 router.post('/', requireAuth, async (req, res) => {
   try {
     const b = req.body || {};
@@ -376,6 +381,7 @@ router.post('/', requireAuth, async (req, res) => {
     // checkbox that makes no sense for a cage or incubator.
     if (b.category !== 'SUP' && !b.attested) return res.status(400).json({ error: 'Please confirm the captive-bred and ownership attestation.' });
     if (!b.agreedTerms) return res.status(400).json({ error: 'Please confirm you are 18+ and agree to the Terms of Service and Privacy Policy.' });
+    if (b.category === 'RAP' && !RAPTORS_ENABLED) return res.status(400).json({ error: RAPTORS_OFF_MESSAGE });
     if (b.category === 'RAP' && !b.permitNumber) return res.status(400).json({ error: 'A falconry/raptor permit number is required to list a bird of prey.' });
     if (b.category === 'SUP' && !b.condition) return res.status(400).json({ error: 'Please select the condition of the item.' });
 
@@ -494,6 +500,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (!b.free && (b.price === undefined || b.price === null || Number(b.price) < 0)) {
       return res.status(400).json({ error: 'Enter a price, or mark the listing free.' });
     }
+    if (b.category === 'RAP' && !RAPTORS_ENABLED) return res.status(400).json({ error: RAPTORS_OFF_MESSAGE });
     if (b.category === 'RAP' && !b.permitNumber) return res.status(400).json({ error: 'A falconry/raptor permit number is required to list a bird of prey.' });
     if (b.category === 'SUP' && !b.condition) return res.status(400).json({ error: 'Please select the condition of the item.' });
 

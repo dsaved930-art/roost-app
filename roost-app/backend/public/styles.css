@@ -74,7 +74,7 @@
   .fp-actions{display:flex;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
   .fp-actions button{flex:1;}
 
-  .location-indicator{display:flex;width:100%;align-items:center;gap:8px;padding:10px 12px;background:var(--canvas);border:none;border-radius:8px;cursor:pointer;font-size:14px;color:var(--ink);font-weight:600;text-align:left;}
+  .location-indicator{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;padding:10px 12px;background:var(--canvas);border:none;border-radius:8px;cursor:pointer;font-size:14px;color:var(--ink);font-weight:600;text-align:center;}
   .location-indicator:hover{background:#E8EAED;}
   .location-indicator svg{width:16px;height:16px;flex:0 0 auto;color:var(--muted);}
   #location-indicator-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
