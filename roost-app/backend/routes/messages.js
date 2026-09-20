@@ -30,8 +30,13 @@ router.get('/', requireAuth, async (req, res) => {
          WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1
        ) lastMsg ON true
        LEFT JOIN LATERAL (
-         SELECT COUNT(*)::int AS count FROM messages
-         WHERE conversation_id = c.id AND sender_id != $1 AND read_at IS NULL
+         SELECT (
+           (SELECT COUNT(*) FROM messages
+            WHERE conversation_id = c.id AND sender_id != $1 AND read_at IS NULL)
+           +
+           (SELECT COUNT(*) FROM message_reactions r JOIN messages rm ON rm.id = r.message_id
+            WHERE rm.conversation_id = c.id AND r.user_id != $1 AND r.seen_at IS NULL)
+         )::int AS count
        ) unread ON true
        WHERE c.buyer_id = $1 OR c.seller_id = $1
        ORDER BY COALESCE(lastMsg.created_at, c.created_at) DESC`,
@@ -49,9 +54,16 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/unread-count', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT COUNT(*)::int AS count FROM messages m
-       JOIN conversations c ON c.id = m.conversation_id
-       WHERE (c.buyer_id = $1 OR c.seller_id = $1) AND m.sender_id != $1 AND m.read_at IS NULL`,
+      `SELECT (
+         (SELECT COUNT(*) FROM messages m
+          JOIN conversations c ON c.id = m.conversation_id
+          WHERE (c.buyer_id = $1 OR c.seller_id = $1) AND m.sender_id != $1 AND m.read_at IS NULL)
+         +
+         (SELECT COUNT(*) FROM message_reactions r
+          JOIN messages rm ON rm.id = r.message_id
+          JOIN conversations rc ON rc.id = rm.conversation_id
+          WHERE (rc.buyer_id = $1 OR rc.seller_id = $1) AND r.user_id != $1 AND r.seen_at IS NULL)
+       )::int AS count`,
       [req.user.id]
     );
     res.json({ count: result.rows[0].count });
@@ -82,11 +94,39 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
       [req.params.id]
     );
 
+    // Reactions are a nice-to-have; the conversation itself must still load if this lookup ever fails
+    // (for example, the reactions table hasn't been created yet), so it fails soft.
+    const reactionsByMessage = {};
+    try {
+      const reactionRows = await pool.query(
+        `SELECT r.message_id AS "messageId", r.user_id AS "userId", r.emoji
+         FROM message_reactions r JOIN messages m ON m.id = r.message_id
+         WHERE m.conversation_id = $1 ORDER BY r.created_at ASC`,
+        [req.params.id]
+      );
+      reactionRows.rows.forEach(r => {
+        (reactionsByMessage[r.messageId] = reactionsByMessage[r.messageId] || []).push({ userId: r.userId, emoji: r.emoji });
+      });
+    } catch (e) {
+      console.error('Could not load message reactions:', e.message);
+    }
+    const messagesWithReactions = messages.rows.map(m => ({ ...m, reactions: reactionsByMessage[m.id] || [] }));
+
     await pool.query(
       `UPDATE messages SET read_at = now()
        WHERE conversation_id = $1 AND sender_id != $2 AND read_at IS NULL`,
       [req.params.id, req.user.id]
     );
+    try {
+      await pool.query(
+        `UPDATE message_reactions SET seen_at = now()
+         WHERE seen_at IS NULL AND user_id != $2
+           AND message_id IN (SELECT id FROM messages WHERE conversation_id = $1)`,
+        [req.params.id, req.user.id]
+      );
+    } catch (e) {
+      console.error('Could not mark reactions seen:', e.message);
+    }
 
     const listingResult = await pool.query('SELECT id, title, photo_thumb AS "photoUrl", sold_to_user_id AS "soldToUserId" FROM listings WHERE id = $1', [conv.listing_id]);
     const listing = listingResult.rows[0] || null;
@@ -114,7 +154,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
         canReview: isBuyer && isConfirmedBuyer && !alreadyReviewed,
         alreadyReviewed
       },
-      messages: messages.rows
+      messages: messagesWithReactions
     });
   } catch (e) {
     console.error(e);
@@ -159,6 +199,47 @@ router.post('/:id/messages', requireAuth, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Could not send that message.' });
+  }
+});
+
+// The only reactions allowed. A fixed list (no free text) means a reaction can never carry a link or
+// scam wording, which keeps it consistent with the no-links rule on regular messages.
+const ALLOWED_REACTIONS = ['👍', '❤️', '😂', '😮', '🙏'];
+
+// React to a message, change your reaction, or remove it by sending the same emoji again.
+// Deliberately sends no email — reactions only show up in the thread and as a quiet unread badge.
+router.post('/:id/messages/:messageId/reaction', requireAuth, async (req, res) => {
+  try {
+    const conv = await assertParticipant(req.params.id, req.user.id);
+    if (!conv) return res.status(404).json({ error: 'Conversation not found.' });
+
+    const messageId = parseInt(req.params.messageId, 10);
+    if (!Number.isInteger(messageId)) return res.status(404).json({ error: 'Message not found.' });
+    const msg = await pool.query('SELECT id FROM messages WHERE id = $1 AND conversation_id = $2', [messageId, conv.id]);
+    if (msg.rows.length === 0) return res.status(404).json({ error: 'Message not found.' });
+
+    const emoji = req.body && req.body.emoji;
+    if (!ALLOWED_REACTIONS.includes(emoji)) return res.status(400).json({ error: 'That reaction is not available.' });
+
+    const existing = await pool.query('SELECT emoji FROM message_reactions WHERE message_id = $1 AND user_id = $2', [messageId, req.user.id]);
+    if (existing.rows.length > 0 && existing.rows[0].emoji === emoji) {
+      await pool.query('DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2', [messageId, req.user.id]);
+    } else {
+      await pool.query(
+        `INSERT INTO message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3)
+         ON CONFLICT (message_id, user_id) DO UPDATE SET emoji = EXCLUDED.emoji, created_at = now(), seen_at = NULL`,
+        [messageId, req.user.id, emoji]
+      );
+    }
+
+    const reactions = await pool.query(
+      'SELECT user_id AS "userId", emoji FROM message_reactions WHERE message_id = $1 ORDER BY created_at ASC',
+      [messageId]
+    );
+    res.json({ reactions: reactions.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not save that reaction.' });
   }
 });
 

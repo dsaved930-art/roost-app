@@ -2020,6 +2020,97 @@ function resetThreadPanelEmpty() {
   document.querySelectorAll('.conv-item.active').forEach(el => el.classList.remove('active'));
 }
 
+// ===================== MESSAGE REACTIONS =====================
+// One emoji per person per message. Desktop: hover a message and click the little smiley. Phones
+// (no hover): the smiley is always faintly visible, and double-tapping a message gives it a heart.
+// Long-press is deliberately NOT used, so people can still long-press to copy message text.
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🙏'];
+const REACT_ICON_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="9.5" stroke-dasharray="2.2 2.6"/><circle cx="9" cy="10" r="0.6" fill="currentColor"/><circle cx="15" cy="10" r="0.6" fill="currentColor"/><path d="M8.5 14.2c.9 1.3 2 1.9 3.5 1.9s2.6-.6 3.5-1.9"/></svg>';
+let threadMessagesById = {};
+
+function reactionsHtml(m) {
+  const list = m.reactions || [];
+  const byEmoji = {};
+  list.forEach(r => { (byEmoji[r.emoji] = byEmoji[r.emoji] || []).push(r.userId); });
+  return Object.keys(byEmoji).map(e => {
+    const ids = byEmoji[e];
+    const mine = currentUser && ids.includes(currentUser.id);
+    return `<button type="button" class="msg-react-chip ${mine ? 'mine-reacted' : ''}" data-emoji="${escapeAttr(e)}">${escapeHtml(e)}${ids.length > 1 ? `<span>${ids.length}</span>` : ''}</button>`;
+  }).join('');
+}
+
+function closeReactionTray() {
+  document.querySelectorAll('.react-tray').forEach(t => t.remove());
+}
+
+function openReactionTray(wrap) {
+  const alreadyOpen = wrap.querySelector('.react-tray');
+  closeReactionTray();
+  if (alreadyOpen) return; // clicking the smiley again just closes it
+  const m = threadMessagesById[wrap.dataset.mid];
+  const mine = currentUser && m ? (m.reactions || []).find(r => r.userId === currentUser.id) : null;
+  const tray = document.createElement('div');
+  tray.className = 'react-tray';
+  tray.innerHTML = REACTION_EMOJIS.map(e =>
+    `<button type="button" data-emoji="${escapeAttr(e)}" class="${mine && mine.emoji === e ? 'active' : ''}" aria-label="React ${escapeAttr(e)}">${escapeHtml(e)}</button>`
+  ).join('');
+  wrap.appendChild(tray);
+  // The message list scrolls, so a tray that opens upward on the first message would be cut off.
+  const box = wrap.parentElement;
+  if (box && wrap.getBoundingClientRect().top - box.getBoundingClientRect().top < 56) tray.classList.add('below');
+}
+
+async function reactToMessage(conversationId, wrap, emoji) {
+  closeReactionTray();
+  const messageId = wrap.dataset.mid;
+  try {
+    const data = await api('/conversations/' + conversationId + '/messages/' + messageId + '/reaction', { method: 'POST', body: JSON.stringify({ emoji }) });
+    const m = threadMessagesById[messageId];
+    if (m) m.reactions = data.reactions;
+    const holder = wrap.querySelector('.msg-reactions');
+    if (holder && m) holder.innerHTML = reactionsHtml(m);
+  } catch (e) {
+    showToast('Could not save that reaction.');
+  }
+}
+
+// Registered once per open thread on the message list (delegated, so re-renders don't stack listeners).
+let reactionOutsideClickWired = false;
+function wireMessageReactions(msgsWrap, conversationId) {
+  msgsWrap.onclick = (e) => {
+    const wrap = e.target.closest('.msg-wrap');
+    if (!wrap) return;
+    const trayBtn = e.target.closest('.react-tray button');
+    if (trayBtn) { reactToMessage(conversationId, wrap, trayBtn.dataset.emoji); return; }
+    if (e.target.closest('.msg-react-btn') || e.target.closest('.msg-react-chip')) { openReactionTray(wrap); return; }
+  };
+  // Double-tap a message on a touch screen to heart it (or take the heart back off).
+  // addEventListener rather than the on* property: non-touch desktop browsers silently ignore
+  // the property form, and #thread-messages is reused across threads, so the previous
+  // thread's listener is removed first instead of stacking up.
+  if (msgsWrap._doubleTapHandler) msgsWrap.removeEventListener('touchend', msgsWrap._doubleTapHandler);
+  let lastTapAt = 0, lastTapWrap = null;
+  msgsWrap._doubleTapHandler = (e) => {
+    const bubble = e.target.closest('.msg-bubble');
+    const wrap = bubble && bubble.closest('.msg-wrap');
+    if (!wrap) return;
+    const now = Date.now();
+    if (lastTapWrap === wrap && now - lastTapAt < 300) {
+      e.preventDefault();
+      lastTapAt = 0; lastTapWrap = null;
+      reactToMessage(conversationId, wrap, '❤️');
+    } else {
+      lastTapAt = now; lastTapWrap = wrap;
+    }
+  };
+  msgsWrap.addEventListener('touchend', msgsWrap._doubleTapHandler, { passive: false });
+  if (!reactionOutsideClickWired) {
+    reactionOutsideClickWired = true;
+    document.addEventListener('click', (e) => { if (!e.target.closest('.react-tray, .msg-react-btn, .msg-react-chip')) closeReactionTray(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeReactionTray(); });
+  }
+}
+
 async function openThread(conversationId) {
   // Mobile (narrow screens): swap the list pane out for the thread pane.
   // Desktop: both panes already show side by side — this just reveals the
@@ -2029,6 +2120,8 @@ async function openThread(conversationId) {
   document.querySelectorAll('.conv-item').forEach(el => el.classList.toggle('active', el.dataset.convId === String(conversationId)));
   document.getElementById('thread-messages').innerHTML = 'Loading…';
   document.getElementById('thread-header').innerHTML = '';
+  threadMessagesById = {};
+  closeReactionTray();
 
   try {
     const data = await api('/conversations/' + conversationId + '/messages');
@@ -2074,10 +2167,17 @@ async function openThread(conversationId) {
         const warningHtml = flagged
           ? `<div class="msg-scam-warning">⚠️ This message mentions something common in online scams (wiring money, gift cards, shipping without meeting, etc). Never send money before meeting in person and seeing the bird.</div>`
           : '';
-        return `${warningHtml}<div class="msg-bubble ${mine ? 'msg-mine' : 'msg-theirs'}">${escapeHtml(m.body)}<div class="msg-time">${mine ? 'You' : escapeHtml(m.senderName)} · ${time}</div></div>`;
+        threadMessagesById[m.id] = m;
+        const reactBtn = `<button type="button" class="msg-react-btn" aria-label="React to this message" title="React">${REACT_ICON_SVG}</button>`;
+        const bubble = `<div class="msg-bubble ${mine ? 'msg-mine' : 'msg-theirs'}">${escapeHtml(m.body)}<div class="msg-time">${mine ? 'You' : escapeHtml(m.senderName)} · ${time}</div></div>`;
+        return `<div class="msg-wrap ${mine ? 'mine' : 'theirs'}" data-mid="${m.id}">${warningHtml}
+          <div class="msg-line">${mine ? reactBtn + bubble : bubble + reactBtn}</div>
+          <div class="msg-reactions">${reactionsHtml(m)}</div>
+        </div>`;
       }).join('');
     }
     msgsWrap.scrollTop = msgsWrap.scrollHeight;
+    wireMessageReactions(msgsWrap, conversationId);
 
     const sendBtn = document.getElementById('thread-send');
     const input = document.getElementById('thread-input');
@@ -2085,6 +2185,15 @@ async function openThread(conversationId) {
     document.getElementById('thread-scam-warning').classList.remove('show');
     input.oninput = () => {
       document.getElementById('thread-scam-warning').classList.toggle('show', containsScamLanguage(input.value));
+    };
+    // Enter sends and Shift+Enter starts a new line, like most chat apps. On phones and tablets
+    // (touch screens) Enter stays a plain new line, since there's an on-screen Send button and
+    // people often want multi-line messages when typing with a thumb.
+    const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+    input.onkeydown = (e) => {
+      if (isTouchDevice || e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+      e.preventDefault();
+      sendBtn.click(); // goes through the same checks as clicking Send; a disabled button ignores it, so no double-send
     };
     sendBtn.onclick = async () => {
       const text = input.value.trim();

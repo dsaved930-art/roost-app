@@ -130,6 +130,17 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- One emoji reaction per person per message. seen_at stays NULL until the *other* person opens the
+-- thread, which is what drives the quiet unread badge for reactions (no emails are sent for these).
+CREATE TABLE IF NOT EXISTS message_reactions (
+  message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji       TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  seen_at     TIMESTAMPTZ,
+  PRIMARY KEY (message_id, user_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_created_at ON listings (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_listing_id ON reports (listing_id);
 CREATE TABLE IF NOT EXISTS reviews (
