@@ -2942,38 +2942,47 @@ function renderNameSection() {
 // ---- Password ----
 function renderPasswordSection() {
   const wrap = document.getElementById('password-body');
-  wrap.innerHTML = `
-    <div class="account-form">
-      ${passwordFieldHtml('pw-current', 'Current password', '')}
-      ${passwordFieldHtml('pw-new', 'New password', 'At least 6 characters')}
-      ${passwordFieldHtml('pw-confirm', 'Confirm new password', '')}
-      <div class="auth-error" id="pw-error"></div>
-      <div class="btn-row"><button class="secondary" id="pw-save">Change password</button></div>
-    </div>`;
-  ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => wirePasswordToggle(id));
-  document.getElementById('pw-current').autocomplete = 'current-password';
-  document.getElementById('pw-new').autocomplete = 'new-password';
-  document.getElementById('pw-confirm').autocomplete = 'new-password';
-  const errEl = document.getElementById('pw-error');
-  const btn = document.getElementById('pw-save');
-  btn.addEventListener('click', async () => {
-    errEl.style.color = ''; errEl.textContent = '';
-    const currentPassword = document.getElementById('pw-current').value;
-    const newPassword = document.getElementById('pw-new').value;
-    const confirmPassword = document.getElementById('pw-confirm').value;
-    if (!currentPassword || !newPassword) { errEl.textContent = 'Enter your current password and a new one.'; return; }
-    if (newPassword.length < 6) { errEl.textContent = 'Your new password should be at least 6 characters.'; return; }
-    if (newPassword !== confirmPassword) { errEl.textContent = 'The new passwords don\'t match.'; return; }
-    btn.disabled = true; btn.textContent = 'Changing…';
-    try {
-      await api('/users/me/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
-      ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => { document.getElementById(id).value = ''; });
-      showToast('Password changed.');
-    } catch (e) {
-      errEl.textContent = (e.data && e.data.error) || 'Could not change your password. Please try again.';
-    } finally {
-      btn.disabled = false; btn.textContent = 'Change password';
-    }
+  // Collapsed by default: just a button. The fields only appear once someone asks to change their password.
+  wrap.innerHTML = `<button class="secondary" id="pw-start">Change password</button>`;
+  document.getElementById('pw-start').addEventListener('click', () => {
+    wrap.innerHTML = `
+      <div class="account-form">
+        ${passwordFieldHtml('pw-current', 'Current password', '')}
+        ${passwordFieldHtml('pw-new', 'New password', 'At least 6 characters')}
+        ${passwordFieldHtml('pw-confirm', 'Confirm new password', '')}
+        <div class="auth-error" id="pw-error"></div>
+        <div class="btn-row">
+          <button class="primary" id="pw-save">Update password</button>
+          <button class="secondary" id="pw-cancel" type="button">Cancel</button>
+        </div>
+      </div>`;
+    ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => wirePasswordToggle(id));
+    document.getElementById('pw-current').autocomplete = 'current-password';
+    document.getElementById('pw-new').autocomplete = 'new-password';
+    document.getElementById('pw-confirm').autocomplete = 'new-password';
+    document.getElementById('pw-current').focus();
+    document.getElementById('pw-cancel').addEventListener('click', renderPasswordSection); // closes it and discards anything typed
+
+    const errEl = document.getElementById('pw-error');
+    const btn = document.getElementById('pw-save');
+    btn.addEventListener('click', async () => {
+      errEl.textContent = '';
+      const currentPassword = document.getElementById('pw-current').value;
+      const newPassword = document.getElementById('pw-new').value;
+      const confirmPassword = document.getElementById('pw-confirm').value;
+      if (!currentPassword || !newPassword) { errEl.textContent = 'Enter your current password and a new one.'; return; }
+      if (newPassword.length < 6) { errEl.textContent = 'Your new password should be at least 6 characters.'; return; }
+      if (newPassword !== confirmPassword) { errEl.textContent = 'The new passwords don\'t match.'; return; }
+      btn.disabled = true; btn.textContent = 'Updating…';
+      try {
+        await api('/users/me/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
+        renderPasswordSection(); // folds back down to the single button, with nothing left in the fields
+        showToast('Password changed.');
+      } catch (e) {
+        errEl.textContent = (e.data && e.data.error) || 'Could not change your password. Please try again.';
+        btn.disabled = false; btn.textContent = 'Update password';
+      }
+    });
   });
 }
 
