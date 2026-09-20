@@ -316,6 +316,17 @@
   .msg-mine{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px;}
   .msg-theirs{align-self:flex-start;background:var(--canvas);color:var(--ink);border-bottom-left-radius:4px;}
   .msg-time{font-size:10px;opacity:0.7;margin-top:4px;}
+  #account-overlay .field input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:8px;font-family:'Public Sans',sans-serif;font-size:14px;background:#fff;}
+  #account-overlay .password-field-wrap input{padding-right:40px;}
+  .account-form .field{margin-bottom:12px;}
+  .account-form .btn-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .account-form .field input{width:100%;}
+  button.danger{background:var(--rust);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer;font-family:inherit;font-size:14px;}
+  button.danger:hover:not(:disabled){background:var(--rust-dark);}
+  button.danger:disabled{opacity:.45;cursor:not-allowed;}
+  button.danger-outline{background:transparent;color:var(--rust-dark);border:1px solid var(--rust);border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer;font-family:inherit;font-size:13px;}
+  .delete-warning{background:#FBEFE7;border:1px solid var(--rust);border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.5;color:var(--rust-dark);margin-bottom:12px;}
+  .delete-warning ul{margin:6px 0 0 18px;padding:0;}
   .notify-row{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:var(--canvas);border-radius:8px;cursor:pointer;font-size:14px;}
   .notify-row input{margin-top:3px;flex:0 0 auto;}
   .notify-hint{display:block;font-size:12px;color:var(--muted);font-weight:400;margin-top:2px;line-height:1.4;}

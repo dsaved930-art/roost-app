@@ -1872,7 +1872,7 @@ const LEGAL_CONTENT = {
   privacy: `
     <h3>Privacy Policy (summary)</h3>
     <p>We collect what you submit in a listing and account signup — species, description, city/state, and the contact information you choose to include. Contact information in a listing is only shown to signed-in users.</p>
-    <p>We don't sell your personal information. You can request deletion of your listing and account at any time.</p>
+    <p>We don't sell your personal information. You can delete your account at any time from your account settings, which also removes your listings and messages.</p>
     <p>We advertise Roost using Google Ads. To measure whether our ads work, Google may set cookies or use similar technology on your device when you visit Roost, and we tell Google when an action happens on the site, such as an account being created, a message being sent, or a listing being posted. We don't share the content of your messages or listings for this purpose. You can control ad personalization at <a href="https://adssettings.google.com" target="_blank" rel="noopener">adssettings.google.com</a> or by blocking cookies in your browser.</p>
     <p>Roost is not intended for anyone under 18, and we don't knowingly collect information from anyone under that age.</p>
     <div class="legal-note">This is a condensed summary. The complete Privacy Policy is available as a separate document.</div>
@@ -2900,8 +2900,131 @@ document.getElementById('account-overlay').addEventListener('click', (e) => { if
 async function openAccountModal() {
   document.getElementById('account-overlay').classList.add('show');
   renderEmailStatus();
+  renderNameSection();
+  renderPasswordSection();
+  renderDeleteSection();
   renderNotificationPrefs(); // deliberately not awaited: if it fails it can't hold up the rest of this window
   await renderVerificationSection();
+}
+
+// ---- Your name ----
+function renderNameSection() {
+  const wrap = document.getElementById('name-body');
+  wrap.innerHTML = `
+    <div class="account-form">
+      <div class="field"><input type="text" id="account-name-input" maxlength="60" autocomplete="name" value="${escapeAttr(currentUser.name)}" aria-label="Your name"></div>
+      <div class="auth-error" id="account-name-error"></div>
+      <div class="btn-row"><button class="secondary" id="account-name-save">Save name</button></div>
+    </div>`;
+  const input = document.getElementById('account-name-input');
+  const errEl = document.getElementById('account-name-error');
+  const btn = document.getElementById('account-name-save');
+  btn.addEventListener('click', async () => {
+    errEl.textContent = '';
+    const name = input.value.replace(/\s+/g, ' ').trim();
+    if (!name) { errEl.textContent = 'Please enter a name.'; return; }
+    if (name === currentUser.name) { showToast('That\'s already your name.'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const data = await api('/users/me/name', { method: 'PUT', body: JSON.stringify({ name }) });
+      currentUser.name = data.name;
+      input.value = data.name;
+      updateAuthArea(); // the "Hi, name" greeting in the header
+      showToast('Name updated.');
+    } catch (e) {
+      errEl.textContent = (e.data && e.data.error) || 'Could not save your name. Please try again.';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Save name';
+    }
+  });
+}
+
+// ---- Password ----
+function renderPasswordSection() {
+  const wrap = document.getElementById('password-body');
+  wrap.innerHTML = `
+    <div class="account-form">
+      ${passwordFieldHtml('pw-current', 'Current password', '')}
+      ${passwordFieldHtml('pw-new', 'New password', 'At least 6 characters')}
+      ${passwordFieldHtml('pw-confirm', 'Confirm new password', '')}
+      <div class="auth-error" id="pw-error"></div>
+      <div class="btn-row"><button class="secondary" id="pw-save">Change password</button></div>
+    </div>`;
+  ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => wirePasswordToggle(id));
+  document.getElementById('pw-current').autocomplete = 'current-password';
+  document.getElementById('pw-new').autocomplete = 'new-password';
+  document.getElementById('pw-confirm').autocomplete = 'new-password';
+  const errEl = document.getElementById('pw-error');
+  const btn = document.getElementById('pw-save');
+  btn.addEventListener('click', async () => {
+    errEl.style.color = ''; errEl.textContent = '';
+    const currentPassword = document.getElementById('pw-current').value;
+    const newPassword = document.getElementById('pw-new').value;
+    const confirmPassword = document.getElementById('pw-confirm').value;
+    if (!currentPassword || !newPassword) { errEl.textContent = 'Enter your current password and a new one.'; return; }
+    if (newPassword.length < 6) { errEl.textContent = 'Your new password should be at least 6 characters.'; return; }
+    if (newPassword !== confirmPassword) { errEl.textContent = 'The new passwords don\'t match.'; return; }
+    btn.disabled = true; btn.textContent = 'Changing…';
+    try {
+      await api('/users/me/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
+      ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => { document.getElementById(id).value = ''; });
+      showToast('Password changed.');
+    } catch (e) {
+      errEl.textContent = (e.data && e.data.error) || 'Could not change your password. Please try again.';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Change password';
+    }
+  });
+}
+
+// ---- Delete account ----
+function renderDeleteSection() {
+  const wrap = document.getElementById('delete-body');
+  wrap.innerHTML = `<button class="danger-outline" id="delete-start">Delete my account…</button>`;
+  document.getElementById('delete-start').addEventListener('click', () => {
+    wrap.innerHTML = `
+      <div class="delete-warning">
+        <strong>This is permanent and can't be undone.</strong> Deleting your account will:
+        <ul>
+          <li>remove all of your listings,</li>
+          <li>remove your messages, including those conversations for the other person,</li>
+          <li>remove reviews you've written or received, and your saved searches and saved listings,</li>
+          <li>end any active boost, with no refund.</li>
+        </ul>
+      </div>
+      <div class="account-form">
+        ${passwordFieldHtml('delete-password', 'Your password', '')}
+        <div class="field"><label for="delete-confirm">Type <strong>DELETE</strong> to confirm</label><input type="text" id="delete-confirm" autocomplete="off" autocapitalize="characters"></div>
+        <div class="auth-error" id="delete-error"></div>
+        <div class="btn-row">
+          <button class="danger" id="delete-go" disabled>Permanently delete my account</button>
+          <button class="secondary" id="delete-cancel" type="button">Cancel</button>
+        </div>
+      </div>`;
+    wirePasswordToggle('delete-password');
+    document.getElementById('delete-password').autocomplete = 'current-password';
+    const confirmInput = document.getElementById('delete-confirm');
+    const goBtn = document.getElementById('delete-go');
+    const errEl = document.getElementById('delete-error');
+    confirmInput.addEventListener('input', () => { goBtn.disabled = confirmInput.value.trim() !== 'DELETE'; });
+    document.getElementById('delete-cancel').addEventListener('click', renderDeleteSection);
+    goBtn.addEventListener('click', async () => {
+      errEl.textContent = '';
+      goBtn.disabled = true; goBtn.textContent = 'Deleting…';
+      try {
+        await api('/users/me/delete', { method: 'POST', body: JSON.stringify({ password: document.getElementById('delete-password').value, confirm: confirmInput.value.trim() }) });
+        document.getElementById('account-overlay').classList.remove('show');
+        currentUser = null;
+        updateAuthArea();
+        switchView('browse');
+        showToast('Your account has been deleted.');
+      } catch (e) {
+        errEl.textContent = (e.data && e.data.error) || 'Could not delete your account. Please try again.';
+        goBtn.disabled = confirmInput.value.trim() !== 'DELETE';
+        goBtn.textContent = 'Permanently delete my account';
+      }
+    });
+  });
 }
 
 // Email notification settings. Each section of this window loads on its own and handles its own
@@ -3009,7 +3132,7 @@ async function renderVerificationSection() {
       <div class="field"><label for="verify-business-name">Breeder / business name</label><input type="text" id="verify-business-name" placeholder="e.g. Sacramento Valley Aviary" value="${escapeAttr(status.businessName || '')}"></div>
       <div class="field"><label for="verify-phone">Phone number</label><input type="text" id="verify-phone" placeholder="(555) 555-0100" value="${escapeAttr(status.phone || '')}"></div>
       <div class="auth-error" id="verify-apply-error"></div>
-      <button class="primary" id="verify-apply-submit" style="width:100%;">Submit for review</button>
+      <button class="primary" id="verify-apply-submit" style="width:100%;">Save changes</button>
     </div>
   `;
 
@@ -3029,7 +3152,7 @@ async function renderVerificationSection() {
     } catch (e) {
       err.textContent = (e.data && e.data.error) || 'Could not submit your application.';
     } finally {
-      btn.disabled = false; btn.textContent = 'Submit for review';
+      btn.disabled = false; btn.textContent = 'Save changes';
     }
   });
 }
