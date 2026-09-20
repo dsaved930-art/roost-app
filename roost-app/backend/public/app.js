@@ -3167,7 +3167,22 @@ async function setupGooglePlacesIfConfigured() {
   }
 }
 
+// Ad landing links like /?cat=finches open Roost already filtered to that category, so someone
+// who searched "finches for sale" doesn't have to hunt for finches. Raptors are intentionally
+// not linkable this way. The URL is deliberately left untouched afterwards: Google's tag reads
+// the ad-click ID (gclid) from it, and stripping it would break conversion attribution.
+const CATEGORY_URL_SLUGS = {
+  parrots: 'PAR', finches: 'FIN', canaries: 'FIN', poultry: 'POU', doves: 'DOV', pigeons: 'DOV',
+  waterfowl: 'WTF', softbills: 'SFT', other: 'OTH', supplies: 'SUP'
+};
+function applyCategoryFromUrl() {
+  const slug = (new URLSearchParams(window.location.search).get('cat') || '').toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(CATEGORY_URL_SLUGS, slug)) currentCategory = CATEGORY_URL_SLUGS[slug];
+}
+applyCategoryFromUrl();
+
 renderChips();
+updateFilterBadge();
 populateCategorySelect();
 renderPhotoGrid();
 routeFromLocation();
