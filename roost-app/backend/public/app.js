@@ -3144,6 +3144,18 @@ async function renderNotificationPrefs() {
 }
 
 // The "turn these off" link in message emails lands here with ?account=notifications.
+// Ad landing link for the seller campaign: roostmarketplace.com/?action=post
+// Signed-out visitors get the signup gate first (openPostForm already does this) — posting IS the
+// conversion we're tracking, so routing through signup first is the intended path, not a detour.
+function handlePostActionRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('action') !== 'post') return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('action');
+  window.history.replaceState({}, '', url.toString());
+  openPostForm();
+}
+
 function handleAccountRedirect() {
   const params = new URLSearchParams(window.location.search);
   if (!params.get('account')) return;
@@ -3543,7 +3555,7 @@ populateCategorySelect();
 renderPhotoGrid();
 routeFromLocation();
 loadRecentlySold();
-refreshCurrentUser().then(() => { handleVerifyRedirect(); handleConversationRedirect(); handleBoostConfirmRedirect(); handleAccountRedirect(); });
+refreshCurrentUser().then(() => { handleVerifyRedirect(); handleConversationRedirect(); handleBoostConfirmRedirect(); handleAccountRedirect(); handlePostActionRedirect(); });
 handleResetTokenRedirect();
 setupGooglePlacesIfConfigured();
 api('/stats/pageview', { method: 'POST' }).catch(() => {});
