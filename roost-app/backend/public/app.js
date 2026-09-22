@@ -209,12 +209,18 @@ let boostFreeTrial = false; // set from /api/config — while true, Boost is fre
 
 function renderChips() {
   const wrap = document.getElementById('category-chips');
-  wrap.innerHTML = VISIBLE_CATEGORIES.map(c => `
+  const allChip = `
+    <button class="chip all-chip ${currentCategory === 'all' ? 'active' : ''}" data-code="all">
+      All categories
+    </button>`;
+  wrap.innerHTML = allChip + VISIBLE_CATEGORIES.map(c => `
     <button class="chip ${currentCategory === c.code ? 'active' : ''}" data-code="${c.code}">
       <span class="dot" style="background:${c.color}"></span>${c.label}
     </button>`).join('');
   wrap.querySelectorAll('.chip').forEach(btn => {
     btn.addEventListener('click', () => {
+      // Clicking the active category (including "All" itself) is a no-op toggle back to "All" —
+      // same behavior as before, "All" is just now a visible, explicit choice instead of a hidden one.
       currentCategory = (currentCategory === btn.dataset.code) ? 'all' : btn.dataset.code;
       renderChips();
       updateFilterBadge();
@@ -735,13 +741,62 @@ function showToast(msg) {
 }
 
 // ===================== VIEW SWITCHING =====================
+// Two separate search fields now: #search-input lives in the sidebar (desktop, unchanged from
+// before) and #search-input-mobile is its own field pinned to the top of the page on phones,
+// where the sidebar is an off-canvas drawer someone has to open on purpose to find it. Only one
+// of the two is ever visible at a given screen width, but both write into the SAME filtering
+// logic below (which reads #search-input, and is also what "Save this search" captures), so
+// typing in either one works identically and a saved search is correct regardless of which field
+// someone actually used.
 document.getElementById('search-input').addEventListener('input', applyFilters);
+document.getElementById('search-input-mobile').addEventListener('input', () => {
+  document.getElementById('search-input').value = document.getElementById('search-input-mobile').value;
+  applyFilters();
+});
+document.getElementById('search-form-mobile').addEventListener('submit', (e) => {
+  e.preventDefault();
+  applyFilters();
+  document.getElementById('search-input-mobile').blur(); // closes the on-screen keyboard once the search is applied
+});
 document.getElementById('sort-filter').addEventListener('change', applyFilters);
 
+// On iPhone, the on-screen keyboard shrinks the VISUAL viewport but not the LAYOUT viewport that
+// position:fixed elements size themselves against — so a fixed drawer doesn't shrink when the
+// keyboard opens, and its own content (e.g. the category list) ends up hidden behind the keyboard
+// and Safari's own toolbar instead of scrolling up cleanly above it. This keeps the drawer synced
+// to the space actually visible, only while it's in its mobile (fixed-position) layout — the
+// desktop sticky sidebar is untouched.
+function syncFilterPanelToKeyboard() {
+  if (!window.visualViewport) return;
+  const panel = document.getElementById('filter-panel');
+  if (!panel.classList.contains('show') || getComputedStyle(panel).position !== 'fixed') return;
+  panel.style.height = window.visualViewport.height + 'px';
+  panel.style.top = window.visualViewport.offsetTop + 'px';
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncFilterPanelToKeyboard);
+  window.visualViewport.addEventListener('scroll', syncFilterPanelToKeyboard);
+}
+
+let scrollYBeforeDrawer = 0;
 function setSidebarDrawerOpen(open) {
   document.getElementById('filter-panel').classList.toggle('show', open);
   document.getElementById('filter-toggle').classList.toggle('active', open);
   document.getElementById('sidebar-backdrop').classList.toggle('show', open);
+  // position:fixed on <body> is the reliable cross-browser way to fully stop the page behind a
+  // mobile drawer from scrolling (overscroll-behavor alone isn't consistent on older iOS Safari) —
+  // it has to be paired with restoring the exact scroll position on close, or the page jumps to top.
+  if (open) {
+    scrollYBeforeDrawer = window.scrollY;
+    document.body.style.top = `-${scrollYBeforeDrawer}px`;
+    document.body.classList.add('drawer-open-lock');
+  } else if (document.body.classList.contains('drawer-open-lock')) {
+    document.body.classList.remove('drawer-open-lock');
+    document.body.style.top = '';
+    window.scrollTo(0, scrollYBeforeDrawer);
+  }
+  const panel = document.getElementById('filter-panel');
+  if (open) { syncFilterPanelToKeyboard(); } else { panel.style.height = ''; panel.style.top = ''; }
 }
 
 document.getElementById('filter-toggle').addEventListener('click', () => {
@@ -895,7 +950,7 @@ function switchView(view) {
   }
   if (view === 'browse') loadListings();
   if (view === 'mylistings') loadMyListings();
-  if (view === 'saved') loadSavedListings();
+  if (view === 'saved') { loadSavedListings(); document.getElementById('alerts-btn').style.display = 'flex'; refreshAlertsBadge(); }
   if (view === 'messages') {
     document.getElementById('messages-shell').classList.remove('showing-thread');
     resetThreadPanelEmpty();
@@ -1482,11 +1537,11 @@ function updateAuthArea() {
   document.getElementById('account-btn').addEventListener('click', openAccountModal);
   document.getElementById('logout-btn').addEventListener('click', logout);
   messagesTab.style.display = 'inline-flex';
-  alertsBtn.style.display = 'flex';
   myListingsTab.style.display = 'inline-flex';
   savedTab.style.display = 'inline-flex';
   refreshUnreadBadge();
-  refreshAlertsBadge();
+  // alertsBtn itself now lives inside the Saved page (not the header), so its own visibility is
+  // handled by switchView() when that page opens — nothing to do for it here on sign-in.
 }
 
 async function logout() {

@@ -70,10 +70,6 @@
       <button id="tab-saved" style="display:none;">Saved</button>
       <button id="tab-messages" style="display:none;position:relative;">Messages<span class="msg-badge" id="msg-badge" style="display:none;"></span></button>
     </nav>
-    <button id="alerts-btn" class="bell-btn" style="display:none;" aria-label="Saved search alerts">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-      <span class="msg-badge" id="alerts-badge" style="display:none;"></span>
-    </button>
     <div class="auth-area" id="auth-area"></div>
   </div>
 </header>
@@ -138,6 +134,12 @@
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
     <div class="browse-main">
+      <form class="browse-search-row" id="search-form-mobile">
+        <input type="search" id="search-input-mobile" enterkeyhint="search" autocomplete="off" placeholder="Search by species, breed, or city…">
+        <button type="submit" class="browse-search-btn" aria-label="Search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+      </form>
       <button class="mobile-filter-btn" id="filter-toggle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2.2" fill="#fff"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="16" cy="12" r="2.2" fill="#fff"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2.2" fill="#fff"/></svg>
         Filters
@@ -345,8 +347,17 @@
 </main>
 
 <main class="wrap" id="view-saved" style="display:none;">
-  <h2 style="font-size:24px;margin-bottom:4px;">Saved</h2>
-  <p style="color:var(--muted);font-size:14px;margin-bottom:20px;">Listings you've bookmarked for later.</p>
+  <div class="saved-header-row">
+    <div>
+      <h2 style="font-size:24px;margin-bottom:4px;">Saved</h2>
+      <p style="color:var(--muted);font-size:14px;margin:0;">Listings you've bookmarked for later.</p>
+    </div>
+    <button id="alerts-btn" class="bell-btn" style="display:none;" aria-label="Saved search alerts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+      Search alerts
+      <span class="msg-badge" id="alerts-badge" style="display:none;"></span>
+    </button>
+  </div>
   <div class="grid" id="saved-grid"></div>
 </main>
 
