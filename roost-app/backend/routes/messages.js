@@ -4,6 +4,7 @@ const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { sendNewMessageEmail } = require('../utils/messageNotify');
 const { containsUrl } = require('../utils/linkDetection');
+const { thumbUrlSql } = require('../utils/photoUrls');
 
 // List all conversations the current user is part of (as buyer or seller),
 // newest activity first, with an unread count for the badge in the header.
@@ -14,7 +15,7 @@ router.get('/', requireAuth, async (req, res) => {
          c.id,
          c.listing_id AS "listingId",
          l.title AS "listingTitle",
-         l.photo_thumb AS "listingPhoto",
+         ${thumbUrlSql('l.id', 'l.photo_thumb')} AS "listingPhoto",
          CASE WHEN c.buyer_id = $1 THEN c.seller_id ELSE c.buyer_id END AS "otherUserId",
          CASE WHEN c.buyer_id = $1 THEN sellerUser.name ELSE buyerUser.name END AS "otherUserName",
          lastMsg.body AS "lastMessage",
@@ -128,7 +129,7 @@ router.get('/:id/messages', requireAuth, async (req, res) => {
       console.error('Could not mark reactions seen:', e.message);
     }
 
-    const listingResult = await pool.query('SELECT id, title, photo_thumb AS "photoUrl", sold_to_user_id AS "soldToUserId" FROM listings WHERE id = $1', [conv.listing_id]);
+    const listingResult = await pool.query(`SELECT id, title, ${thumbUrlSql('id', 'photo_thumb')} AS "photoUrl", sold_to_user_id AS "soldToUserId" FROM listings WHERE id = $1`, [conv.listing_id]);
     const listing = listingResult.rows[0] || null;
 
     const isBuyer = conv.buyer_id === req.user.id;

@@ -6,6 +6,7 @@ const { notifySavedSearches } = require('../services/alerts');
 const { sendNewMessageEmail } = require('../utils/messageNotify');
 const { containsUrl } = require('../utils/linkDetection');
 const { publicDisplayName } = require('../utils/displayName');
+const { thumbUrlSql } = require('../utils/photoUrls');
 const { geocodeCityState } = require('../utils/geocode');
 const { stripe, stripeConfigured } = require('../utils/stripe');
 const { BOOST_FREE_TRIAL, BOOST_PRICE_CENTS, BOOST_DURATION_HOURS, BOOST_CHECKOUT_LOCK_MINUTES } = require('../config/boost');
@@ -21,7 +22,7 @@ router.get('/', async (req, res) => {
     // listings join below correctly match nothing rather than erroring.
     const result = await pool.query(
       `SELECT l.id, l.title, l.category, l.breed, l.age, l.sex, l.free, l.price, l.price_type AS "priceType", l.open_to_trade AS "openToTrade", l.city, l.state,
-              l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.lat, l.lon,
+              ${thumbUrlSql('l.id', 'l.photo_thumb')} AS "photoUrl", l.created_at AS "createdAt", l.lat, l.lon,
               l.status, l.shipping_available AS "shippingAvailable", l.condition,
               COALESCE(u.verification_status = 'verified', FALSE) AS "sellerVerified",
               (sl.id IS NOT NULL) AS "savedByMe",
@@ -40,12 +41,37 @@ router.get('/', async (req, res) => {
   }
 });
 
+// One listing's cover thumbnail as a real image. Lists point at this instead of embedding the photo,
+// so the browser can load photos separately (lazily, a few at a time) and remember them.
+// Short cache with revalidation: an edited photo shows up within a few minutes.
+router.get('/:id/thumb', async (req, res) => {
+  try {
+    if (!/^\d+$/.test(req.params.id)) return res.status(404).end();
+    const result = await pool.query('SELECT photo_thumb FROM listings WHERE id = $1', [req.params.id]);
+    const thumb = result.rows.length ? result.rows[0].photo_thumb : null;
+    if (!thumb) return res.status(404).end();
+
+    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/.exec(thumb);
+    if (!match) {
+      // Older listings might hold an ordinary web address instead of an embedded image.
+      if (/^https?:\/\//i.test(thumb)) return res.redirect(302, thumb);
+      return res.status(404).end();
+    }
+    res.set('Cache-Control', 'public, max-age=300');
+    res.type(match[1]);
+    res.send(Buffer.from(match[2], 'base64')); // Express adds an ETag here and answers repeat requests with a tiny 304
+  } catch (e) {
+    console.error(e);
+    res.status(500).end();
+  }
+});
+
 // Recently sold — public social proof that the platform actually produces
 // sales. Must be registered before GET /:id, same reason as /mine below.
 router.get('/sold', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, title, category, free, price, price_type AS "priceType", city, state, photo_thumb AS "photoUrl", sold_at AS "soldAt"
+      `SELECT id, title, category, free, price, price_type AS "priceType", city, state, ${thumbUrlSql('id', 'photo_thumb')} AS "photoUrl", sold_at AS "soldAt"
        FROM listings
        WHERE status = 'sold'
        ORDER BY sold_at DESC
@@ -67,7 +93,7 @@ router.get('/mine', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT l.id, l.title, l.category, l.free, l.price, l.price_type AS "priceType", l.city, l.state, l.status, l.sold_at AS "soldAt",
-              l.photo_thumb AS "photoUrl", l.created_at AS "createdAt", l.view_count AS "viewCount",
+              ${thumbUrlSql('l.id', 'l.photo_thumb')} AS "photoUrl", l.created_at AS "createdAt", l.view_count AS "viewCount",
               l.boosted_until AS "boostedUntil", l.boost_started_at AS "boostStartedAt",
               l.boost_view_count_at_start AS "boostViewCountAtStart",
               l.boost_save_count_at_start AS "boostSaveCountAtStart",
@@ -110,7 +136,7 @@ router.get('/saved', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT l.id, l.title, l.category, l.breed, l.age, l.sex, l.free, l.price, l.price_type AS "priceType",
-              l.open_to_trade AS "openToTrade", l.city, l.state, l.photo_thumb AS "photoUrl",
+              l.open_to_trade AS "openToTrade", l.city, l.state, ${thumbUrlSql('l.id', 'l.photo_thumb')} AS "photoUrl",
               l.created_at AS "createdAt", l.status, l.condition, sl.created_at AS "savedAt", TRUE AS "savedByMe"
        FROM saved_listings sl
        JOIN listings l ON l.id = sl.listing_id

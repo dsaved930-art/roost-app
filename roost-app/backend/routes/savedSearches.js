@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { thumbUrlSql } = require('../utils/photoUrls');
 
 const MAX_SAVED_SEARCHES_PER_USER = 20;
 
@@ -84,7 +85,7 @@ router.get('/notifications', requireAuth, async (req, res) => {
       `SELECT ssm.id, ssm.notified_at AS "notifiedAt", ssm.read_at AS "readAt",
               ss.name AS "searchName",
               l.id AS "listingId", l.title AS "listingTitle", l.free, l.price,
-              l.city, l.state, l.photo_thumb AS "listingPhoto"
+              l.city, l.state, ${thumbUrlSql('l.id', 'l.photo_thumb')} AS "listingPhoto"
        FROM saved_search_matches ssm
        JOIN saved_searches ss ON ss.id = ssm.saved_search_id
        JOIN listings l ON l.id = ssm.listing_id

@@ -12,7 +12,7 @@ if (emailConfigured) {
   });
 }
 
-async function sendMail({ to, subject, text, html }) {
+async function sendMail({ to, subject, text, html, headers }) {
   if (!emailConfigured) {
     console.log(`[email skipped — SMTP not configured] Would have sent "${subject}" to ${to}`);
     return { skipped: true };
@@ -23,7 +23,8 @@ async function sendMail({ to, subject, text, html }) {
     // for hello@roostmarketplace.com, which reads like a person's name
     // rather than the actual sender.
     from: `"Roost" <${process.env.FROM_EMAIL || process.env.SMTP_USER}>`,
-    to, subject, text, html
+    to, subject, text, html,
+    ...(headers ? { headers } : {}) // optional extra email headers, e.g. List-Unsubscribe
   });
 }
 

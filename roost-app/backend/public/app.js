@@ -410,7 +410,7 @@ function listingCardHtml(l) {
         ${l.status === 'pending' ? '<div class="pending-ribbon">PENDING</div>' : ''}
         ${postTimeBadgeHtml(l.createdAt)}
         ${saveToggleBtnHtml(l)}
-        <div class="thumb-img-wrap">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="" onerror="this.parentElement.innerHTML='${c.icon}'">` : c.icon}</div>
+        <div class="thumb-img-wrap">${l.photoUrl ? `<img loading="lazy" decoding="async" src="${escapeAttr(l.photoUrl)}" alt="" onerror="this.parentElement.innerHTML='${c.icon}'">` : c.icon}</div>
       </div>
       <div class="card-body">
         <div class="card-title-row"><h3>${escapeHtml(l.title)}</h3>${l.sellerVerified ? verifiedBadgeHtml('inline') : ''}</div>
@@ -1990,7 +1990,7 @@ async function loadConversations() {
       const preview = c.lastMessage ? (c.lastMessageSenderId === currentUser.id ? 'You: ' : '') + c.lastMessage : 'No messages yet';
       return `
       <button class="conv-item ${c.unreadCount > 0 ? 'unread' : ''}" data-conv-id="${c.id}">
-        <div class="conv-thumb">${c.listingPhoto ? `<img src="${escapeAttr(c.listingPhoto)}" alt="">` : '🐦'}</div>
+        <div class="conv-thumb">${c.listingPhoto ? `<img loading="lazy" decoding="async" src="${escapeAttr(c.listingPhoto)}" alt="">` : '🐦'}</div>
         <div class="conv-info">
           <div class="conv-top">
             <div class="conv-name">${escapeHtml(c.otherUserName)}</div>
@@ -2136,7 +2136,7 @@ async function openThread(conversationId) {
     // you're a few messages deep, especially across several conversations.
     const listingLinkHtml = conv.listing ? `
       <button class="th-listing-link" id="th-listing-link">
-        <div class="th-listing-thumb">${conv.listing.photoUrl ? `<img src="${escapeAttr(conv.listing.photoUrl)}" alt="">` : '🐦'}</div>
+        <div class="th-listing-thumb">${conv.listing.photoUrl ? `<img loading="lazy" decoding="async" src="${escapeAttr(conv.listing.photoUrl)}" alt="">` : '🐦'}</div>
         <div class="th-listing-title">${escapeHtml(conv.listing.title)}</div>
       </button>` : `<div class="th-listing">Listing</div>`;
 
@@ -2308,7 +2308,7 @@ async function openSellerProfile(sellerId) {
       : `<div class="seller-listings-grid">${data.listings.map(l => {
           const c = catInfo(l.category);
           return `<div class="seller-mini-card" data-id="${l.id}">
-            <div class="smc-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
+            <div class="smc-thumb">${l.photoUrl ? `<img loading="lazy" decoding="async" src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
             <div class="smc-body">
               <div class="smc-title">${escapeHtml(l.title)}</div>
               <div class="smc-price">${formatPriceDisplay(l)}</div>
@@ -2417,7 +2417,7 @@ async function loadMyListings() {
       }
       return `
       <div class="myl-item ${l.status === 'sold' ? 'myl-sold' : ''} ${l.boostIsActive && l.status !== 'sold' ? 'boosted-glow' : ''}" data-id="${l.id}">
-        <div class="myl-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
+        <div class="myl-thumb">${l.photoUrl ? `<img loading="lazy" decoding="async" src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
         <div class="myl-info">
           <div class="myl-title">${statusBadge}${escapeHtml(l.title)} — ${formatPriceDisplay(l)}</div>
           <div class="myl-meta">Posted ${when} · ${escapeHtml(catInfo(l.category).label)}</div>
@@ -2563,9 +2563,22 @@ function startBoostCountdowns() {
 // backend's boost_result_acknowledged flag makes sure of that), with the
 // actual before/after numbers rather than a multiplier claim we can't back
 // up credibly at our current traffic.
+// Below this, the popup leads with encouragement about the free placement rather than a
+// discouraging "+0" — a real number is still shown once there's at least one to show. The
+// threshold is "any single number that's actually worth naming", not an average.
+function boostResultMessage(l) {
+  const parts = [];
+  if (l.boostViewsGained > 0) parts.push(`+${l.boostViewsGained} view${l.boostViewsGained === 1 ? '' : 's'}`);
+  if (l.boostSavesGained > 0) parts.push(`+${l.boostSavesGained} save${l.boostSavesGained === 1 ? '' : 's'}`);
+  if (l.boostConversationsGained > 0) parts.push(`+${l.boostConversationsGained} message${l.boostConversationsGained === 1 ? '' : 's'}`);
+  if (parts.length === 0) {
+    return `"${l.title}" was featured at the top of Browse for 24 hours. Roost's traffic is still growing, so boosted listings will get more eyes on them as more buyers visit. Want to feature it again, free, while boosting is free?`;
+  }
+  const joined = parts.length === 1 ? parts[0] : parts.length === 2 ? parts.join(' and ') : parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1];
+  return `"${l.title}" picked up ${joined} while it was boosted.`;
+}
 function showBoostResultPopup(l) {
-  document.getElementById('boost-result-text').textContent =
-    `"${l.title}" picked up +${l.boostViewsGained} view${l.boostViewsGained === 1 ? '' : 's'}, +${l.boostSavesGained} save${l.boostSavesGained === 1 ? '' : 's'}, and +${l.boostConversationsGained} message${l.boostConversationsGained === 1 ? '' : 's'} while it was boosted.`;
+  document.getElementById('boost-result-text').textContent = boostResultMessage(l);
   document.getElementById('boost-result-overlay').classList.add('show');
 
   const acknowledge = () => api('/listings/' + l.id + '/boost/acknowledge-result', { method: 'POST' }).catch(() => {});
@@ -2878,7 +2891,7 @@ async function loadNotificationsList() {
       const when = new Date(n.notifiedAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
       return `
       <div class="notif-item ${!n.readAt ? 'unread' : ''}" data-listing-id="${n.listingId}">
-        <div class="notif-thumb">${n.listingPhoto ? `<img src="${escapeAttr(n.listingPhoto)}" alt="">` : '🐦'}</div>
+        <div class="notif-thumb">${n.listingPhoto ? `<img loading="lazy" decoding="async" src="${escapeAttr(n.listingPhoto)}" alt="">` : '🐦'}</div>
         <div class="notif-text">
           <div><strong>${escapeHtml(n.listingTitle)}</strong> — ${n.free ? 'Free' : '$' + n.price} · ${escapeHtml(n.city)}, ${escapeHtml(n.state)}</div>
           <div class="notif-search-name">Matches "${escapeHtml(n.searchName)}" · ${when}</div>
@@ -3254,7 +3267,7 @@ async function loadRecentlySold() {
       const c = catInfo(l.category);
       return `
       <a class="rs-card" href="/listing/${l.id}" data-id="${l.id}">
-        <div class="rs-thumb">${l.photoUrl ? `<img src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
+        <div class="rs-thumb">${l.photoUrl ? `<img loading="lazy" decoding="async" src="${escapeAttr(l.photoUrl)}" alt="">` : c.icon}</div>
         <div class="rs-body">
           <div class="rs-name">${escapeHtml(l.title)}</div>
           <div class="rs-price">${formatPriceDisplay(l)}</div>

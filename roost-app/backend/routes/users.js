@@ -7,6 +7,7 @@ const { hashPassword, comparePassword } = require('../utils/passwords');
 const { containsUrl } = require('../utils/linkDetection');
 const { makeGuard } = require('../utils/rateLimit');
 const { sendPasswordChangedEmail, sendAccountDeletedEmail } = require('../utils/accountNotify');
+const { thumbUrlSql } = require('../utils/photoUrls');
 
 // 5 wrong-password guesses per 15 minutes per account, shared across everything that asks for the
 // current password (so guesses can't be doubled by alternating between changing and deleting).
@@ -168,7 +169,7 @@ router.get('/:id/profile', async (req, res) => {
     const publicReviews = reviewsResult.rows.map(r => ({ ...r, reviewerName: publicDisplayName(r.reviewerName) }));
 
     const listingsResult = await pool.query(
-      `SELECT id, title, category, breed, free, price, price_type AS "priceType", city, state, photo_thumb AS "photoUrl", created_at AS "createdAt"
+      `SELECT id, title, category, breed, free, price, price_type AS "priceType", city, state, ${thumbUrlSql('id', 'photo_thumb')} AS "photoUrl", created_at AS "createdAt"
        FROM listings WHERE posted_by = $1 ORDER BY created_at DESC LIMIT 12`,
       [user.id]
     );

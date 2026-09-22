@@ -29,6 +29,10 @@ async function sendNewMessageEmail({ recipientId, recipientEmail, recipientName,
 
   return sendMail({
     to: recipientEmail,
+    // Puts a small "Unsubscribe" link beside the sender's name in Gmail and similar apps. Mail providers
+    // treat it as a sign of a legitimate sender, and it gives people an easy way out that isn't the spam
+    // button. It opens the account settings page, where the notification switch lives.
+    headers: { 'List-Unsubscribe': `<${settingsLink}>` },
     subject: `${senderName} sent you a message on Roost about "${listingTitle}"`,
     text: `Hi ${recipientName},\n\n${senderName} sent you a message about "${listingTitle}" on Roost:\n\n"${preview}"\n\nReply here: ${link}\n\n— Roost\n\nDon't want emails when you get a message? You can turn them off in your account settings: ${settingsLink}`,
     html: `
