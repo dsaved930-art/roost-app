@@ -5,9 +5,9 @@
 //
 // Roost runs as a single server process, so in-memory is enough. If it ever runs on several servers
 // at once this should move to a shared store.
-function makeGuard({ windowMs, maxFailures }) {
+function makeGuard({ windowMs, maxFailures, keyOf }) {
   const failures = new Map(); // key -> { count, resetAt }
-  const keyOf = req => (req.user ? 'u' + req.user.id : 'ip' + req.ip);
+  keyOf = keyOf || (req => (req.user ? 'u' + req.user.id : 'ip' + req.ip));
 
   // Drop expired entries now and then so the map can't grow forever.
   setInterval(() => {
@@ -32,6 +32,10 @@ function makeGuard({ windowMs, maxFailures }) {
       if (!entry || entry.resetAt <= now) { entry = { count: 0, resetAt: now + windowMs }; failures.set(key, entry); }
       entry.count++;
     },
+    // Same bookkeeping, named for guards that count every attempt rather than only failed ones
+    // (e.g. signup, forgot-password — spamming those has a cost, like sending an email, even when
+    // the request itself was perfectly valid).
+    record(req) { this.recordFailure(req); },
     // Call after a correct password, so honest mistakes don't linger.
     reset(req) { failures.delete(keyOf(req)); }
   };

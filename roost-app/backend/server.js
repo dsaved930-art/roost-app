@@ -6,6 +6,7 @@ const { authOptional } = require('./middleware/auth');
 const { BOOST_FREE_TRIAL } = require('./config/boost');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Registered before express.json() below, with its own raw-body parser —
 // Stripe's signature check needs the exact raw bytes it signed, which the

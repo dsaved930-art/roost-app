@@ -6,11 +6,39 @@ const { setAuthCookie, clearAuthCookie } = require('../middleware/auth');
 const { sendVerificationEmail } = require('../utils/emailVerification');
 const { sendPasswordResetEmail } = require('../utils/passwordReset');
 const { requireAuth } = require('../middleware/auth');
+const { makeGuard } = require('../utils/rateLimit');
 
 function normalizeEmail(e) { return String(e || '').trim().toLowerCase(); }
 function isValidEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
-router.post('/signup', async (req, res) => {
+// ---- Rate limiting ----
+// Two layers on login, same idea as a bank card: a few wrong PINs on YOUR card locks your card,
+// not everyone's. "Per account" stops someone guessing passwords against one target email; "per IP"
+// stops someone spraying many different emails from one source. Only real failures count — a typo'd
+// email that doesn't exist, or a wrong password, count; a successful login only resets the per-account
+// counter (an IP that succeeds once could still be mid-spray against other accounts).
+const loginPerAccountGuard = makeGuard({
+  windowMs: 15 * 60 * 1000, maxFailures: 10,
+  keyOf: req => 'login-acct:' + req.ip + ':' + normalizeEmail(req.body && req.body.email)
+});
+const loginPerIpGuard = makeGuard({ windowMs: 15 * 60 * 1000, maxFailures: 30, keyOf: req => 'login-ip:' + req.ip });
+
+// Signup and forgot-password both send a real email, so every attempt has a cost even when it's
+// perfectly valid — these count ALL attempts, not just failed ones (see record() vs recordFailure()).
+const signupGuard = makeGuard({ windowMs: 60 * 60 * 1000, maxFailures: 8, keyOf: req => 'signup-ip:' + req.ip });
+const forgotPasswordIpGuard = makeGuard({ windowMs: 15 * 60 * 1000, maxFailures: 8, keyOf: req => 'forgot-ip:' + req.ip });
+const forgotPasswordEmailGuard = makeGuard({
+  windowMs: 60 * 60 * 1000, maxFailures: 3,
+  keyOf: req => 'forgot-email:' + normalizeEmail(req.body && req.body.email)
+});
+
+// A reset token is long and random, so guessing one directly isn't realistic — this is just a
+// backstop against a script hammering the endpoint, not a defense the token's own randomness
+// doesn't already provide.
+const resetPasswordGuard = makeGuard({ windowMs: 15 * 60 * 1000, maxFailures: 20, keyOf: req => 'reset-ip:' + req.ip });
+
+
+router.post('/signup', signupGuard.middleware, async (req, res) => {
   try {
     const name = String(req.body.name || '').trim();
     const email = normalizeEmail(req.body.email);
@@ -19,6 +47,7 @@ router.post('/signup', async (req, res) => {
     if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required.' });
     if (!isValidEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
     if (password.length < 6) return res.status(400).json({ error: 'Password should be at least 6 characters.' });
+    signupGuard.record(req);
 
     const existing = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     let user;
@@ -55,22 +84,30 @@ router.post('/signup', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginPerAccountGuard.middleware, loginPerIpGuard.middleware, async (req, res) => {
   try {
     const email = normalizeEmail(req.body.email);
     const password = String(req.body.password || '');
     if (!email || !password) return res.status(400).json({ error: 'Enter your email and password.' });
 
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'No account found with that email.' });
+    if (result.rows.length === 0) {
+      loginPerAccountGuard.recordFailure(req); loginPerIpGuard.recordFailure(req);
+      return res.status(404).json({ error: 'No account found with that email.' });
+    }
 
     const user = result.rows[0];
     if (!user.password_hash) {
+      loginPerAccountGuard.recordFailure(req); loginPerIpGuard.recordFailure(req);
       return res.status(400).json({ error: "This account doesn't have a password yet — sign up with this same email to set one." });
     }
 
     const ok = await comparePassword(password, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Incorrect password.' });
+    if (!ok) {
+      loginPerAccountGuard.recordFailure(req); loginPerIpGuard.recordFailure(req);
+      return res.status(401).json({ error: 'Incorrect password.' });
+    }
+    loginPerAccountGuard.reset(req); // the per-IP counter is deliberately left alone — see comment above
 
     setAuthCookie(res, user);
     res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, emailVerified: user.email_verified, verificationStatus: user.verification_status, verificationNote: user.verification_note } });
@@ -136,10 +173,12 @@ router.post('/resend-verification', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', forgotPasswordIpGuard.middleware, forgotPasswordEmailGuard.middleware, async (req, res) => {
   try {
     const email = normalizeEmail(req.body.email);
     if (!email || !isValidEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+    forgotPasswordIpGuard.record(req);
+    forgotPasswordEmailGuard.record(req);
 
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     // Deliberately the same response whether or not the account exists —
@@ -163,17 +202,18 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', resetPasswordGuard.middleware, async (req, res) => {
   try {
     const token = String(req.body.token || '');
     const newPassword = String(req.body.newPassword || '');
     if (!token) return res.status(400).json({ error: 'Missing reset token.' });
-    if (newPassword.length < 6) return res.status(400).json({ error: 'Password should be at least 6 characters.' });
+    if (newPassword.length < 6) { resetPasswordGuard.recordFailure(req); return res.status(400).json({ error: 'Password should be at least 6 characters.' }); }
 
     const result = await pool.query('SELECT * FROM password_reset_tokens WHERE token = $1', [token]);
-    if (result.rows.length === 0) return res.status(400).json({ error: 'That reset link is invalid or has already been used.' });
+    if (result.rows.length === 0) { resetPasswordGuard.recordFailure(req); return res.status(400).json({ error: 'That reset link is invalid or has already been used.' }); }
     const record = result.rows[0];
     if (new Date(record.expires_at) < new Date()) {
+      resetPasswordGuard.recordFailure(req);
       await pool.query('DELETE FROM password_reset_tokens WHERE id = $1', [record.id]);
       return res.status(400).json({ error: 'That reset link has expired — request a new one.' });
     }
