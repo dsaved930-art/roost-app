@@ -1642,12 +1642,15 @@ function categoryBreakdownHtml(rows) {
     </div>`).join('');
 }
 
+let lastStatsSnapshot = null; // powers the Download button — the same numbers already on screen, not a second fetch
+
 async function openStats() {
   document.getElementById('stats-overlay').classList.add('show');
   const body = document.getElementById('stats-body');
   body.innerHTML = 'Loading…';
   try {
     const s = await api('/stats');
+    lastStatsSnapshot = s;
     const messageRate = s.totalListingViews > 0 ? Math.round((s.totalConversations / s.totalListingViews) * 100) : 0;
     body.innerHTML = `
       <div class="stats-grid">
@@ -1692,11 +1695,84 @@ async function openStats() {
         <div class="stat-card"><div class="num">$${((s.boostTotalRevenueCents || 0) / 100).toFixed(2)}</div><div class="label">Boost revenue collected</div></div>
       </div>
       <div class="stats-note">Counts each listing's most recent boost only — a listing boosted more than once doesn't add up across boosts yet. Fine for a read on adoption during the test period; worth a proper history table before this doubles as real revenue accounting.</div>
+      <button class="secondary" id="download-stats-btn" style="width:100%;margin-top:18px;">⬇ Download these stats (CSV)</button>
     `;
+    document.getElementById('download-stats-btn').addEventListener('click', downloadStatsCsv);
   } catch (e) {
     body.innerHTML = `<div class="empty" style="padding:30px 10px;">${e.status === 403 ? 'Admin access required.' : 'Could not load stats.'}</div>`;
   }
 }
+function csvField(v) {
+  return `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+}
+
+// Mirrors the sections rendered in openStats() above, in the same order, so the file matches what
+// was actually on screen when downloaded. One flat "Metric,Value" sheet with section header rows —
+// opens cleanly in Excel, Numbers, or Google Sheets without needing multiple tabs.
+function buildStatsCsv(s) {
+  const rows = [];
+  const row = (...fields) => rows.push(fields.map(csvField).join(','));
+  const section = (title) => { rows.push(''); row(title); };
+  const messageRate = s.totalListingViews > 0 ? Math.round((s.totalConversations / s.totalListingViews) * 100) : 0;
+
+  row('Roost site stats', new Date().toLocaleString());
+  section('Overview');
+  row('Page loads (all time)', s.pageviews || 0);
+  row('Listing clicks / views', s.listingviews || 0);
+  row('Accounts created', s.accounts || 0);
+  row('Listings ever posted', s.listingsPosted || 0);
+
+  section('Growth — new listings by week');
+  row('Week of', 'New listings');
+  (s.weeklyListings || []).forEach(w => row(w.week, w.count));
+
+  section('Growth — new signups by week');
+  row('Week of', 'New signups');
+  (s.weeklySignups || []).forEach(w => row(w.week, w.count));
+
+  section('Where listings are coming from');
+  row('City, State', 'Listings');
+  (s.topLocations || []).forEach(l => row(`${l.city}, ${l.state}`, l.count));
+
+  section('By category');
+  row('Category', 'Listings');
+  (s.categoryBreakdown || []).forEach(c => row(catInfo(c.category).label, c.count));
+
+  section('Engagement — is it actually working?');
+  row('Total listing views', s.totalListingViews || 0);
+  row('Buyer-seller conversations started', s.totalConversations || 0);
+  row('Views that led to a message (%)', messageRate);
+  row('Listings sold', s.soldCount || 0);
+  row('Avg. days to sell', s.avgDaysToSale != null ? s.avgDaysToSale : 'none yet');
+  row('Verified breeders', s.verifiedBreeders || 0);
+  row('Buyers with a saved search', s.savedSearchUsers || 0);
+  row('Total messages sent', s.totalMessages || 0);
+  row('Listings reported at least once', s.reportedListings || 0);
+
+  section(`Boost${boostFreeTrial ? ' (free trial)' : ''}`);
+  row('Boosted right now', s.boostActiveNow || 0);
+  row('Listings ever boosted', s.boostEverBoosted || 0);
+  row('Total views gained from boosts', s.boostTotalViewsGained || 0);
+  row('Boost revenue collected ($)', ((s.boostTotalRevenueCents || 0) / 100).toFixed(2));
+
+  return rows.join('\r\n');
+}
+
+function downloadStatsCsv() {
+  if (!lastStatsSnapshot) return;
+  const csv = buildStatsCsv(lastStatsSnapshot);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, so repeat downloads don't collide
+  a.href = url;
+  a.download = `roost-stats-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 document.getElementById('footer-stats').addEventListener('click', (e) => {
   e.preventDefault();
   if (!isAdmin()) { alert('You do not have access to this page.'); return; }
